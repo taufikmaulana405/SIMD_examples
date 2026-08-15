@@ -1,0 +1,12 @@
+[package]
+name = "gravity_simd_avx2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+macroquad = "0.4.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
