@@ -5,7 +5,7 @@ use std::f32::consts::TAU;
 use std::arch::x86_64::*;
 
 const SIMD_LANES: usize = 8;
-const PARTICLE_COUNT: usize = 5_000;
+const PARTICLE_COUNT: usize = 10_000;
 
 // Arbitrary simulation units.
 const GRAVITATIONAL_CONSTANT: f32 = 15.0;

@@ -3,17 +3,17 @@ use macroquad::rand::gen_range;
 use std::collections::VecDeque;
 use std::f32::consts::TAU;
 
-const PARTICLE_COUNT: usize = 1_000;
+const PARTICLE_COUNT: usize = 10_000;
 
 // Arbitrary simulation units.
 const GRAVITATIONAL_CONSTANT: f32 = 15.0;
 
 const MIN_PARTICLE_MASS: f32 = 5.0;
-const MAX_PARTICLE_MASS: f32 = 12.0;
+const MAX_PARTICLE_MASS: f32 = 20.0;
 const PARTICLE_RADIUS_SCALE: f32 = 0.45;
 
 // Particles begin inside this disk. There is no initial central body.
-const SPAWN_RADIUS: f32 = 500.0;
+const SPAWN_RADIUS: f32 = 1200.0;
 
 // Initial cloud concentration.
 //
