@@ -146,6 +146,21 @@ The default is 5,000 particles, matching `gravity_wasm`. GPU compute removes the
 
 ---
 
+## gravity_gpu
+
+`gravity_gpu` is a separate native desktop project derived from `gravity_simd_avx2`. It keeps the AVX2 example's 10,000-particle initialization and physics profile, but replaces AVX2 CPU arithmetic with `wgpu` compute shaders and GPU-instanced rendering.
+
+### Run
+
+```bash
+cd gravity_gpu
+cargo run --release
+```
+
+`wgpu` selects a supported Vulkan, Direct3D 12, Metal, or other native backend automatically. A compatible GPU driver is required. Gravity is an O(N²) all-pairs calculation; the initial native GPU version keeps physics and rendering GPU-resident and intentionally leaves collision compaction for a future GPU compute pass. See [`gravity_gpu/README.md`](gravity_gpu/README.md) for controls and troubleshooting.
+
+---
+
 ## Checking CPU Support
 
 ### Linux
