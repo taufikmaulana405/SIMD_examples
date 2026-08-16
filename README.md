@@ -56,7 +56,7 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release
 
 Contains the gravity simulation compiled to **WebAssembly**, so it can run directly in any modern browser without installing Rust or native dependencies.
 
-Because WebAssembly does not support x86-specific instructions such as AVX2, this version uses scalar arithmetic instead. The particle count is also reduced to 2,000 (from 10,000) to keep the simulation smooth inside the browser's single-threaded execution environment.
+Because WebAssembly does not support x86-specific instructions such as AVX2, this version uses scalar arithmetic instead. The particle count is set to 5,000 to keep the simulation practical inside the browser's single-threaded execution environment.
 
 ### Prerequisites
 
@@ -106,6 +106,43 @@ npx serve .
 | `T` | Toggle particle trails |
 | `↑` / `↓` | Increase / decrease time scale |
 | Mouse wheel | Zoom in / out |
+
+---
+
+## gravity_webgpu
+
+Contains a separate browser implementation using **WebGPU compute shaders**. The O(N²) gravity calculation and particle rendering run on the GPU; JavaScript handles initialization, input, and frame scheduling. The existing `gravity_wasm` example remains available as the scalar WebAssembly fallback.
+
+### Run
+
+WebGPU requires a compatible browser/GPU and a secure context. `localhost` is allowed, but opening the page directly with `file://` is not.
+
+**Python:**
+
+```bash
+cd gravity_webgpu
+python3 -m http.server 8080
+```
+
+**Node.js / npx:**
+
+```bash
+cd gravity_webgpu
+npx serve -l 8080
+```
+
+Open <http://localhost:8080> in a recent Chrome or Edge release with WebGPU support. The page reports a readable error when `navigator.gpu` or a suitable adapter is unavailable.
+
+### Controls
+
+| Key / Input | Action |
+|---|---|
+| `Space` | Pause / Resume |
+| `R` | Reset simulation |
+| `↑` / `↓` | Increase / decrease time scale |
+| Mouse wheel | Zoom in / out |
+
+The default is 5,000 particles, matching `gravity_wasm`. GPU compute removes the scalar CPU bottleneck, but the all-pairs solver remains O(N²), so performance depends on the browser, GPU, and particle count. Gravity and rendering remain GPU-resident; throttled readback is used only for reference-style collision merging and trail snapshots. GPU floating-point reduction can still produce small differences from the scalar reference.
 
 ---
 
