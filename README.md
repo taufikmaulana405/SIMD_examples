@@ -52,6 +52,63 @@ cargo run --release
 RUSTFLAGS="-C target-cpu=native" cargo run --release
 ```
 
+## gravity_wasm
+
+Contains the gravity simulation compiled to **WebAssembly**, so it can run directly in any modern browser without installing Rust or native dependencies.
+
+Because WebAssembly does not support x86-specific instructions such as AVX2, this version uses scalar arithmetic instead. The particle count is also reduced to 2,000 (from 10,000) to keep the simulation smooth inside the browser's single-threaded execution environment.
+
+### Prerequisites
+
+Add the WebAssembly target to your Rust toolchain (only needed once):
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+### Build
+
+```bash
+cd gravity_wasm
+cargo build --target wasm32-unknown-unknown --release
+```
+
+Copy the compiled binary into the project directory alongside `index.html`:
+
+```bash
+cp target/wasm32-unknown-unknown/release/gravity_wasm.wasm .
+```
+
+### Run in the browser
+
+Browsers require a local HTTP server to load `.wasm` files; opening `index.html` directly as a `file://` URL will not work.
+
+**Python (recommended):**
+
+```bash
+python3 -m http.server 8080
+```
+
+Then open <http://localhost:8080> in your browser.
+
+**Node.js / npx:**
+
+```bash
+npx serve .
+```
+
+### Controls
+
+| Key / Input | Action |
+|---|---|
+| `Space` | Pause / Resume |
+| `R` | Reset simulation |
+| `T` | Toggle particle trails |
+| `↑` / `↓` | Increase / decrease time scale |
+| Mouse wheel | Zoom in / out |
+
+---
+
 ## Checking CPU Support
 
 ### Linux
