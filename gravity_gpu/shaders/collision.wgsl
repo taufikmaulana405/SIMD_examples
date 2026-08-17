@@ -1,6 +1,8 @@
 const GRID_BUCKETS: u32 = 32768u;
 const PARTICLE_CAPACITY: u32 = 10000u;
-const GRID_CELL_SIZE: f32 = 16.0;
+// A 3x3 neighborhood spans 768 world units, covering the largest
+// possible merged radius at the default mass budget without a wide search.
+const GRID_CELL_SIZE: f32 = 256.0;
 const MAX_BUCKET_VISITS: u32 = 128u;
 const NONE: u32 = 0xffffffffu;
 
@@ -28,6 +30,7 @@ struct CollisionMeta {
   next: array<atomic<u32>, 10000>,
   proposal: array<atomic<u32>, 10000>,
   output_count: atomic<u32>,
+  merge_count: atomic<u32>,
   overflow: atomic<u32>,
 };
 struct SimControl { active_count: atomic<u32>, output_count: atomic<u32>, merge_count: atomic<u32>, _padding: array<u32, 5>, };
@@ -69,6 +72,7 @@ fn clear(@builtin(global_invocation_id) id: vec3<u32>) {
   }
   if (index == 0u) {
     atomicStore(&collision_state.output_count, 0u);
+    atomicStore(&collision_state.merge_count, 0u);
     atomicStore(&collision_state.overflow, 0u);
   }
 }
@@ -76,7 +80,8 @@ fn clear(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn build_grid(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
-  if (index >= params.count) { return; }
+  let live_count = min(atomicLoad(&control.active_count), params.count);
+  if (index >= live_count) { return; }
   let p = source[index];
   if (p.alive < 0.5) { return; }
   let bucket = bucket_for(p.position);
@@ -87,7 +92,8 @@ fn build_grid(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn propose(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
-  if (index >= params.count) { return; }
+  let live_count = min(atomicLoad(&control.active_count), params.count);
+  if (index >= live_count) { return; }
   let particle = source[index];
   if (particle.alive < 0.5) { atomicStore(&collision_state.proposal[index], NONE); return; }
   let center = vec2<i32>(i32(floor(particle.position.x / GRID_CELL_SIZE)), i32(floor(particle.position.y / GRID_CELL_SIZE)));
@@ -125,11 +131,19 @@ fn merge_compact(@builtin(global_invocation_id) id: vec3<u32>) {
   if (index >= params.count) { return; }
   let particle = source[index];
   if (particle.alive < 0.5) { return; }
+  let live_count = min(atomicLoad(&control.active_count), params.count);
+  if (index >= live_count) {
+    var dead = destination[index];
+    dead.alive = 0.0;
+    destination[index] = dead;
+    return;
+  }
   let partner = atomicLoad(&collision_state.proposal[index]);
-  if (partner != NONE && atomicLoad(&collision_state.proposal[partner]) == index) {
+  if (partner != NONE && partner < live_count && atomicLoad(&collision_state.proposal[partner]) == index) {
     if (index > partner) { return; }
     let slot = atomicAdd(&collision_state.output_count, 1u);
     destination[slot] = merge_into(particle, source[partner]);
+    atomicAdd(&collision_state.merge_count, 1u);
     return;
   }
   let slot = atomicAdd(&collision_state.output_count, 1u);
@@ -142,5 +156,5 @@ fn finalize(@builtin(global_invocation_id) id: vec3<u32>) {
   let count = min(atomicLoad(&collision_state.output_count), params.count);
   atomicStore(&control.active_count, count);
   atomicStore(&control.output_count, count);
-  atomicStore(&control.merge_count, atomicLoad(&collision_state.overflow));
+  atomicStore(&control.merge_count, atomicLoad(&collision_state.merge_count));
 }

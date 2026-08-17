@@ -265,7 +265,7 @@ impl State {
         });
         let collision_meta = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("collision grid metadata"),
-            size: (32768 * 4 + 10000 * 4 + 10000 * 4 + 8) as u64,
+            size: (32768 * 4 + 10000 * 4 + 10000 * 4 + 4 * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
