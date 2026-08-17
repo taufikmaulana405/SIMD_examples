@@ -39,8 +39,8 @@ const TRAIL_CAPACITY: usize = PARTICLE_COUNT * TRAIL_MAX_SAMPLES;
 const MAX_PHYSICS_STEPS_PER_FRAME: u32 = 2;
 // The deterministic merge kernel is serialized and O(N²). It is deliberately
 // limited to smaller runs until a tiled GPU merge implementation is available.
-const COLLISION_MAX_PARTICLES: usize = 2_000;
-const COLLISION_INTERVAL: u32 = 8;
+const COLLISION_MAX_PARTICLES: usize = PARTICLE_COUNT - 1;
+const COLLISION_INTERVAL: u32 = 1;
 const TRAIL_STRIDE: u64 = 32; // vec2 position + radius + brightness + age + padding.
 
 #[repr(C)]
