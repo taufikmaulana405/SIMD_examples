@@ -25,7 +25,7 @@ const errorBox = document.querySelector("#error");
 function showError(message) {
   errorBox.textContent = message;
   errorBox.style.display = "block";
-  hud.textContent = "WebGPU tidak tersedia";
+  hud.textContent = "WebGPU not available";
 }
 
 function randomRange(min, max) { return min + Math.random() * (max - min); }
@@ -156,15 +156,15 @@ function makeRenderPipeline(device, module, layout, format, vertexEntry, fragmen
 
 async function main() {
   if (!navigator.gpu) {
-    showError("Browser ini tidak menyediakan WebGPU. Gunakan Chrome/Edge terbaru melalui HTTPS atau http://localhost.");
+    showError("WebGPU is not supported in this browser. Please use a recent Chrome or Edge release over HTTPS or http://localhost.");
     return;
   }
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-  if (!adapter) { showError("Adapter WebGPU tidak ditemukan. Periksa dukungan GPU dan driver browser."); return; }
+  if (!adapter) { showError("No suitable WebGPU adapter found. Check GPU hardware support and browser flags."); return; }
   const device = await adapter.requestDevice();
-  device.lost.then(info => showError(`Perangkat WebGPU terputus: ${info.message || info.reason}`));
+  device.lost.then(info => showError(`WebGPU device lost: ${info.message || info.reason}`));
   const context = canvas.getContext("webgpu");
-  if (!context) { showError("Canvas WebGPU tidak dapat dibuat."); return; }
+  if (!context) { showError("Unable to create WebGPU canvas context."); return; }
   const format = navigator.gpu.getPreferredCanvasFormat();
   const [simulationCode, renderCode] = await Promise.all([
     fetch(SIMULATION_SHADER_URL).then(response => response.text()),
@@ -282,7 +282,7 @@ function writeSimParams(state) {
   state.device.queue.writeBuffer(state.simParams, 0, data);
 }
 
-async function simulateStep(state) {
+function simulateStep(state) {
   writeSimParams(state);
   const source = state.particleIndex;
   const destination = 1 - source;
@@ -298,49 +298,51 @@ async function simulateStep(state) {
   pass.dispatchWorkgroups(Math.ceil(state.activeCount / WORKGROUP_SIZE));
   pass.end();
   state.device.queue.submit([commands.finish()]);
-  // Collision semantics match the reference through a throttled readback.
-  // The expensive all-pairs gravity and rendering remain GPU-resident.
-  if (state.frameCount % 4 === 0 && !state.readbackBusy) {
-    state.readbackBusy = true;
-    const generation = state.resetGeneration;
-    const data = await readBuffer(state, state.particles[source]);
-    if (generation !== state.resetGeneration) {
-      state.readbackBusy = false;
-      state.particleIndex = source;
-      return;
-    }
-    const mergedCount = mergeCollisions(data, state.activeCount);
-    if (mergedCount !== state.activeCount) {
-      state.activeCount = mergedCount;
-      state.totalMass = 0;
-      for (let i = 0; i < mergedCount; i++) state.totalMass += data[i * 8 + 4];
-      state.device.queue.writeBuffer(state.particles[source], 0, data);
-      state.device.queue.writeBuffer(state.particles[destination], 0, data);
-    }
-    state.readbackBusy = false;
+
+  // Periodic non-blocking collision merging in the background (never blocks frame loop)
+  if (state.frameCount % 30 === 0 && !state.readbackBusy) {
+    triggerAsyncCollisionMerge(state, source, destination);
   }
-  state.particleIndex = source;
 }
 
-async function sampleTrails(state) {
-  // Keep trail samples independent from later particle merges, as in the
-  // reference VecDeque. This readback is throttled and never drives physics.
-  if (state.readbackBusy) return;
+function triggerAsyncCollisionMerge(state, source, destination) {
   state.readbackBusy = true;
-  const data = await readBuffer(state, state.particles[state.particleIndex]);
-  const sample = new Float32Array(state.activeCount * 4);
-  for (let i = 0; i < state.activeCount; i++) {
-    const base = i * 8;
-    const trailBase = i * 4;
-    sample[trailBase] = data[base];
-    sample[trailBase + 1] = data[base + 1];
-    sample[trailBase + 2] = RADIUS_SCALE * Math.sqrt(data[base + 4]);
-    sample[trailBase + 3] = data[base + 5];
-  }
-  state.trails.push({ time: state.trailClock, sample });
-  while (state.trails.length && state.trailClock - state.trails[0].time >= TRAIL_MAX_AGE) state.trails.shift();
-  state.trailCount = state.trails.reduce((total, entry) => total + entry.sample.length / 4, 0);
-  state.readbackBusy = false;
+  const generation = state.resetGeneration;
+  readBuffer(state, state.particles[source]).then(data => {
+    if (generation === state.resetGeneration) {
+      const mergedCount = mergeCollisions(data, state.activeCount);
+      if (mergedCount !== state.activeCount) {
+        state.activeCount = mergedCount;
+        state.totalMass = 0;
+        for (let i = 0; i < mergedCount; i++) state.totalMass += data[i * 8 + 4];
+        state.device.queue.writeBuffer(state.particles[source], 0, data);
+        state.device.queue.writeBuffer(state.particles[destination], 0, data);
+      }
+    }
+  }).catch(() => {}).finally(() => {
+    state.readbackBusy = false;
+  });
+}
+
+function sampleTrails(state) {
+  if (!state.trailsVisible || state.readbackBusy) return;
+  state.readbackBusy = true;
+  readBuffer(state, state.particles[state.particleIndex]).then(data => {
+    const sample = new Float32Array(state.activeCount * 4);
+    for (let i = 0; i < state.activeCount; i++) {
+      const base = i * 8;
+      const trailBase = i * 4;
+      sample[trailBase] = data[base];
+      sample[trailBase + 1] = data[base + 1];
+      sample[trailBase + 2] = RADIUS_SCALE * Math.sqrt(data[base + 4]);
+      sample[trailBase + 3] = data[base + 5];
+    }
+    state.trails.push({ time: state.trailClock, sample });
+    while (state.trails.length && state.trailClock - state.trails[0].time >= TRAIL_MAX_AGE) state.trails.shift();
+    state.trailCount = state.trails.reduce((total, entry) => total + entry.sample.length / 4, 0);
+  }).catch(() => {}).finally(() => {
+    state.readbackBusy = false;
+  });
 }
 
 function render(state) {
@@ -362,7 +364,7 @@ function render(state) {
   state.device.queue.submit([commands.finish()]);
 }
 
-async function frame(state, now) {
+function frame(state, now) {
   resize(state);
   const elapsed = Math.min((now - state.lastTime) / 1000, 0.1);
   state.lastTime = now;
@@ -370,14 +372,18 @@ async function frame(state, now) {
     state.accumulator += Math.min(elapsed, 0.05) * state.timeScale;
     let steps = 0;
     while (state.accumulator >= PHYSICS_DT && steps < MAX_STEPS) {
-      await simulateStep(state); state.accumulator -= PHYSICS_DT; steps++;
+      simulateStep(state);
+      state.accumulator -= PHYSICS_DT;
+      steps++;
     }
     if (steps === MAX_STEPS) state.accumulator = 0;
     state.trailClock += elapsed;
-    state.trailAccumulator += elapsed;
-    while (state.trailAccumulator >= TRAIL_INTERVAL) {
-      sampleTrails(state);
-      state.trailAccumulator -= TRAIL_INTERVAL;
+    if (state.trailsVisible) {
+      state.trailAccumulator += elapsed;
+      while (state.trailAccumulator >= TRAIL_INTERVAL) {
+        sampleTrails(state);
+        state.trailAccumulator -= TRAIL_INTERVAL;
+      }
     }
   }
   render(state);
@@ -390,4 +396,4 @@ async function frame(state, now) {
   requestAnimationFrame(next => frame(state, next));
 }
 
-main().catch(error => showError(`WebGPU gagal diinisialisasi: ${error.message}`));
+main().catch(error => showError(`WebGPU initialization failed: ${error.message}`));
