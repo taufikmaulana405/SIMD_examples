@@ -169,3 +169,46 @@ impl CudaBackend {
         Ok(output)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{reference, types::Particle};
+
+    fn fixture() -> Particle {
+        Particle {
+            x: 1.0,
+            y: -2.0,
+            vx: 3.0,
+            vy: 4.0,
+            mass: 5.0,
+            brightness: 0.8,
+            alive: 1,
+            padding: 0,
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a CUDA device and driver"]
+    fn cuda_one_particle_matches_reference() {
+        let initial = vec![fixture()];
+        let params = SimParams {
+            count: 1,
+            dt: 0.01,
+            gravity: 15.0,
+            softening_squared: 9.0,
+        };
+        let mut expected = initial.clone();
+        reference::step(&mut expected, params);
+        let mut backend = CudaBackend::new(&initial).expect("CUDA initialization failed");
+        backend.step(params).expect("CUDA step failed");
+        let actual = backend.snapshot().expect("CUDA snapshot failed");
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
+            assert!((actual.x - expected.x).abs() < 1e-4);
+            assert!((actual.y - expected.y).abs() < 1e-4);
+            assert!((actual.vx - expected.vx).abs() < 1e-4);
+            assert!((actual.vy - expected.vy).abs() < 1e-4);
+        }
+    }
+}

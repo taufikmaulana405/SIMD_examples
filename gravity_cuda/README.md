@@ -26,13 +26,33 @@ CUDA_ARCH=compute_86 cargo run --release
 
 The prototype uses synchronized host readback for both rendering and deterministic collision resolution. Physics integration and the final velocity-Verlet kick execute in CUDA; after the drift phase, Rust copies the active prefix to the host, applies the ordered AVX2-compatible merge/compaction routine, uploads the compacted prefix, and then launches the final CUDA kick. This correctness-first boundary is intentionally slower and can be replaced by a GPU-native collision pipeline after parity tests pass. CUDA/OpenGL interop can remove the rendering readback in a later optimization pass.
 
+The project also contains a scalar CUDA-shaped reference oracle in `src/reference.rs`, compiled for CPU tests. It follows the same per-target acceleration loop and drift/merge/final-kick ordering. CUDA floating-point results are not expected to be bitwise identical to AVX2 because CUDA uses `rsqrtf`, fast math, and a different reduction order; future hardware tests should compare positions and velocities with documented tolerances while checking mass, momentum, center of mass, active count, and finite-value invariants.
+
+Run the CPU parity and collision tests with:
+
+```bash
+cargo test --manifest-path Cargo.toml
+```
+
+The CUDA-backed parity smoke test is ignored by default because it requires an NVIDIA driver and device. Run it on the Windows NVIDIA machine with:
+
+```bash
+cargo test --manifest-path Cargo.toml -- --ignored cuda_one_particle_matches_reference
+```
+
+Trails, mass-based rendering, dominant-body glow, and the richer HUD now run on the host snapshot. Collision remains a synchronized deterministic Rust phase by design; GPU-native collision, CUDA/OpenGL interop, and asynchronous GPU residency remain subsequent optimization phases.
+
+Runtime step, reset, and readback failures pause the simulation and are shown in the window. The last valid snapshot remains visible so an error is not mistaken for an empty simulation.
+
 ## Controls
 
 | Key | Action |
 |---|---|
 | `Space` | Pause/resume |
 | `R` | Reset |
-| `Up` / `Down` | Zoom |
+| `Up` / `Down` | Increase/decrease time scale |
+| `T` | Toggle trails |
+| Mouse wheel | Zoom |
 
 The all-pairs kernel is intentionally demanding. The current prototype is a CUDA bring-up baseline; hashed-grid collision and asynchronous GPU-resident rendering are follow-up work. GPU arithmetic is not expected to be bitwise identical to AVX2.
 
