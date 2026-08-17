@@ -69,8 +69,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-wasm-
 
-      # ── 4. Build gravity_wasm ─────────────────────────────────────────────────
+      # ── 4. Build gravity_wasm (with WASM SIMD + optimizations) ───────────────
       - name: Build gravity_wasm (Rust → WASM)
+        env:
+          RUSTFLAGS: "-C target-feature=+simd128"
         run: |
           cd gravity_wasm
           cargo build --target wasm32-unknown-unknown --release
