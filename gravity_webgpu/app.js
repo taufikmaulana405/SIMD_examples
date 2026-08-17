@@ -3,7 +3,7 @@ const RENDER_SHADER_URL = "./render.wgsl";
 // Keep the default modest for browser GPUs: the solver is still O(N²).
 // Start with a small count so the browser can present frames while the
 // correctness path performs two all-pairs passes per physics step.
-const COUNT = 10000; // Matches gravity_wasm; lower this only on weak GPUs.
+const COUNT = 5000; // Matches gravity_wasm; lower this only on weak GPUs.
 const WORKGROUP_SIZE = 64;
 const PHYSICS_DT = 1 / 120;
 const MAX_STEPS = 4;

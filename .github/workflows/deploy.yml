@@ -87,7 +87,8 @@ jobs:
           cp _redirects   dist/ 2>/dev/null || true
 
           # WASM build output
-          cp gravity_wasm/index.html       dist/gravity_wasm/
+          cp gravity_wasm/index.html        dist/gravity_wasm/
+          cp gravity_wasm/mq_js_bundle.js   dist/gravity_wasm/
           cp gravity_wasm/gravity_wasm.wasm dist/gravity_wasm/
 
           # WebGPU (pure static)
@@ -105,7 +106,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: |
-            whoami
-            pages project list
-            pages deploy dist --project-name=gravity-simulation --branch=${{ github.ref == 'refs/heads/main' && 'main' || github.head_ref }}
+          command: pages deploy dist --project-name=gravity-simulation --branch=${{ github.ref == 'refs/heads/main' && 'main' || github.head_ref }}
