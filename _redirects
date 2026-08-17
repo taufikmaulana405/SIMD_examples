@@ -1,0 +1,5 @@
+# Cloudflare Pages – redirect rules
+
+# Redirect short paths /wasm and /webgpu to their respective subfolders
+/wasm     /gravity_wasm/   301
+/webgpu   /gravity_webgpu/ 301

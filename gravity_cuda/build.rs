@@ -187,7 +187,7 @@ fn main() {
     }
 
     let ptx_path = out_dir.join("gravity.ptx");
-    let arch = env::var("CUDA_ARCH").unwrap_or_else(|_| "compute_52".to_owned());
+    let arch = env::var("CUDA_ARCH").unwrap_or_else(|_| "compute_80".to_owned());
     if !arch.starts_with("compute_") && !arch.starts_with("sm_") {
         panic!("CUDA_ARCH must look like compute_XX or sm_XX, got {arch}");
     }

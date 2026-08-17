@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gravity Simulation — Choose Mode</title>
+  <meta name="description" content="Interactive particle gravity simulation. Run directly in the browser using WebAssembly (CPU) or WebGPU (GPU compute shader)." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:        #020612;
+      --surface:   #080f1e;
+      --border:    rgba(100,140,255,0.12);
+      --text:      #d6e4ff;
+      --muted:     #6b82a8;
+      --accent-a:  #4f8fff;
+      --glow-a:    rgba(79,143,255,0.25);
+      --glow-b:    rgba(168,85,247,0.22);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      overflow-x: hidden;
+    }
+
+    #canvas-bg {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      opacity: 0.45;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px 64px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(79,143,255,0.08);
+      border: 1px solid rgba(79,143,255,0.2);
+      border-radius: 100px;
+      padding: 5px 14px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--accent-a);
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent-a);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      color: #eaf1ff;
+      margin-bottom: 16px;
+    }
+    h1 span { color: var(--muted); font-weight: 300; }
+    .subtitle {
+      font-size: clamp(0.9rem, 2vw, 1.05rem);
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      width: 100%;
+      max-width: 760px;
+    }
+
+    .card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 28px 28px;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      overflow: hidden;
+      transition: transform 0.3s cubic-bezier(.22,.68,0,1.2),
+                  border-color 0.3s ease,
+                  box-shadow 0.3s ease;
+      min-height: 320px;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+    .card-wasm::before  { background: radial-gradient(ellipse at 30% 0%, var(--glow-a), transparent 65%); }
+    .card-webgpu::before { background: radial-gradient(ellipse at 70% 0%, var(--glow-b), transparent 65%); }
+
+    .card:hover { transform: translateY(-6px) scale(1.01); }
+    .card-wasm:hover  { border-color: rgba(79,143,255,0.45); box-shadow: 0 20px 60px rgba(79,143,255,0.15); }
+    .card-webgpu:hover { border-color: rgba(168,85,247,0.45); box-shadow: 0 20px 60px rgba(168,85,247,0.15); }
+    .card:hover::before { opacity: 1; }
+
+    .card-icon {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      margin-bottom: 22px;
+      flex-shrink: 0;
+      transition: transform 0.3s ease;
+    }
+    .card:hover .card-icon { transform: scale(1.1) rotate(-4deg); }
+    .card-wasm  .card-icon { background: rgba(79,143,255,0.12); }
+    .card-webgpu .card-icon { background: rgba(168,85,247,0.12); }
+
+    .card-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .card-wasm  .card-label { color: #4f8fff; }
+    .card-webgpu .card-label { color: #c084fc; }
+
+    .card-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #eaf1ff;
+      margin-bottom: 12px;
+    }
+    .card-desc {
+      font-size: 0.875rem;
+      color: var(--muted);
+      line-height: 1.65;
+      flex: 1;
+    }
+
+    .card-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 100px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .chip-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+    .card-wasm  .chip-dot { background: #4f8fff; }
+    .card-webgpu .chip-dot { background: #c084fc; }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 20px;
+      font-size: 13.5px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: gap 0.2s ease;
+    }
+    .card:hover .cta { gap: 10px; }
+    .card-wasm  .cta { color: #4f8fff; }
+    .card-webgpu .cta { color: #c084fc; }
+    .cta-arrow { font-size: 16px; transition: transform 0.2s ease; }
+    .card:hover .cta-arrow { transform: translateX(3px); }
+
+    .footer {
+      margin-top: 52px;
+      text-align: center;
+      font-size: 12.5px;
+      color: #3a4a6a;
+      line-height: 1.8;
+    }
+    .footer a { color: #4a6090; text-decoration: none; transition: color 0.2s; }
+    .footer a:hover { color: #4f8fff; }
+
+    #webgpu-warn {
+      display: none;
+      position: absolute;
+      top: 10px; right: 10px;
+      background: rgba(239,102,128,0.12);
+      border: 1px solid rgba(239,102,128,0.3);
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #fca5a5;
+      line-height: 1.4;
+      max-width: 160px;
+      text-align: center;
+      z-index: 2;
+    }
+
+    @media (max-width: 480px) {
+      .page { padding: 36px 16px 48px; }
+      .header { margin-bottom: 40px; }
+      .card { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas-bg"></canvas>
+
+  <main class="page">
+    <header class="header">
+      <div class="badge">
+        <span class="badge-dot"></span>
+        Gravity Simulation
+      </div>
+      <h1>Choose <span>simulation</span><br>mode</h1>
+      <p class="subtitle">
+        An N-body gravity simulation that runs directly in the browser.
+        Choose WebAssembly for broad compatibility, or WebGPU
+        for full GPU-accelerated performance.
+      </p>
+    </header>
+
+    <div class="cards">
+      <a class="card card-wasm" href="./gravity_wasm/index.html" id="card-wasm">
+        <div class="card-icon">🧩</div>
+        <span class="card-label">CPU · WebAssembly</span>
+        <h2 class="card-title">WASM</h2>
+        <p class="card-desc">
+          Gravity physics compiled from Rust to WebAssembly and executed on the CPU.
+          Compatible with all modern browsers — no special GPU required.
+        </p>
+        <div class="card-divider"></div>
+        <div class="chip-row">
+          <span class="chip"><span class="chip-dot"></span>5,000 particles</span>
+          <span class="chip"><span class="chip-dot"></span>Rust + macroquad</span>
+          <span class="chip"><span class="chip-dot"></span>CPU scalar</span>
+        </div>
+        <span class="cta">Open simulation <span class="cta-arrow">→</span></span>
+      </a>
+
+      <a class="card card-webgpu" href="./gravity_webgpu/index.html" id="card-webgpu">
+        <div class="card-icon">⚡</div>
+        <span class="card-label">GPU · WebGPU Compute</span>
+        <h2 class="card-title">WebGPU</h2>
+        <p class="card-desc">
+          Physics and rendering run entirely on the GPU via WGSL compute shaders.
+          Significantly higher performance. Requires a recent Chrome or Edge with WebGPU enabled.
+        </p>
+        <div id="webgpu-warn">⚠️ Your browser may not support WebGPU</div>
+        <div class="card-divider"></div>
+        <div class="chip-row">
+          <span class="chip"><span class="chip-dot"></span>5,000 particles</span>
+          <span class="chip"><span class="chip-dot"></span>WGSL compute shader</span>
+          <span class="chip"><span class="chip-dot"></span>GPU resident</span>
+        </div>
+        <span class="cta">Open simulation <span class="cta-arrow">→</span></span>
+      </a>
+    </div>
+
+    <footer class="footer">
+      <p>Built with Rust &amp; WebGPU · <a href="https://github.com/taufikmaulana405/SIMD_examples" target="_blank" rel="noopener">GitHub ↗</a></p>
+      <p style="margin-top:4px">WebGPU requires Chrome 113+ or Edge 113+</p>
+    </footer>
+  </main>
+
+  <script>
+    if (!navigator.gpu) {
+      document.getElementById('webgpu-warn').style.display = 'block';
+    }
+
+    (() => {
+      const canvas = document.getElementById('canvas-bg');
+      const ctx = canvas.getContext('2d');
+      let W, H, particles = [];
+      const N = 80;
+
+      function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+      }
+      function rand(a, b) { return a + Math.random() * (b - a); }
+
+      function initParticles() {
+        particles = Array.from({ length: N }, () => ({
+          x: rand(0, W), y: rand(0, H),
+          vx: rand(-0.15, 0.15), vy: rand(-0.15, 0.15),
+          r: rand(0.8, 2.2),
+          alpha: rand(0.15, 0.55),
+          hue: Math.random() < 0.6 ? 220 : 270,
+        }));
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        for (let i = 0; i < N; i++) {
+          for (let j = i + 1; j < N; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 120) {
+              const alpha = (1 - dist / 120) * 0.15;
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(100,160,255,${alpha})`;
+              ctx.lineWidth = 0.5;
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+        for (const p of particles) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `hsla(${p.hue}, 80%, 75%, ${p.alpha})`;
+          ctx.fill();
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < -10) p.x = W + 10;
+          if (p.x > W + 10) p.x = -10;
+          if (p.y < -10) p.y = H + 10;
+          if (p.y > H + 10) p.y = -10;
+        }
+        requestAnimationFrame(draw);
+      }
+
+      resize(); initParticles(); draw();
+      window.addEventListener('resize', () => { resize(); initParticles(); });
+    })();
+  </script>
+</body>
+</html>

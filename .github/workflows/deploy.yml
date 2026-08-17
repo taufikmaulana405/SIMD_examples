@@ -1,0 +1,112 @@
+name: Build & Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Landing page & Cloudflare config
+      - 'index.html'
+      - '_headers'
+      - '_redirects'
+      # WASM source — Rust changes require a rebuild
+      - 'gravity_wasm/**'
+      # WebGPU source — pure static, deploy directly
+      - 'gravity_webgpu/**'
+      # The workflow file itself
+      - '.github/workflows/deploy.yml'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - '_headers'
+      - '_redirects'
+      - 'gravity_wasm/**'
+      - 'gravity_webgpu/**'
+      - '.github/workflows/deploy.yml'
+
+  # Can also be triggered manually with custom options
+  workflow_dispatch:
+    inputs:
+      enable_cache:
+        description: 'Enable Cargo build cache'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build-and-deploy:
+    name: Build WASM → Deploy
+    # Only run on the upstream repository, skip completely if the repository is forked
+    if: github.repository == 'taufikmaulana405/SIMD_examples'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Rust toolchain + wasm32 target ────────────────────────────────────
+      - name: Install Rust (stable + wasm32)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # ── 3. Cache Cargo registry & build artifacts ─────────────────────────────
+      - name: Cache Cargo
+        # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false or manual dispatch input
+        if: ${{ (inputs.enable_cache != false) && (vars.ENABLE_BUILD_CACHE != 'false') }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gravity_wasm/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('gravity_wasm/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+
+      # ── 4. Build gravity_wasm ─────────────────────────────────────────────────
+      - name: Build gravity_wasm (Rust → WASM)
+        run: |
+          cd gravity_wasm
+          cargo build --target wasm32-unknown-unknown --release
+          cp target/wasm32-unknown-unknown/release/gravity_wasm.wasm .
+
+      # ── 5. Assemble clean deploy directory ───────────────────────────────────
+      - name: Prepare dist/
+        run: |
+          mkdir -p dist/gravity_wasm dist/gravity_webgpu
+
+          # Root landing page + headers
+          cp index.html   dist/
+          cp _headers     dist/
+          cp _redirects   dist/ 2>/dev/null || true
+
+          # WASM build output
+          cp gravity_wasm/index.html       dist/gravity_wasm/
+          cp gravity_wasm/gravity_wasm.wasm dist/gravity_wasm/
+
+          # WebGPU (pure static)
+          cp gravity_webgpu/index.html      dist/gravity_webgpu/
+          cp gravity_webgpu/app.js          dist/gravity_webgpu/
+          cp gravity_webgpu/render.wgsl     dist/gravity_webgpu/
+          cp gravity_webgpu/simulation.wgsl dist/gravity_webgpu/
+
+          echo "── dist/ contents ──"
+          find dist -type f
+
+      # ── 6. Deploy to Cloudflare Pages ────────────────────────────────────────
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:      ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId:     ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName:   gravity-simulation
+          directory:     dist
+          gitHubToken:   ${{ secrets.GITHUB_TOKEN }}
+          # PR builds get a preview URL; pushes to main go to production
+          branch:        ${{ github.ref == 'refs/heads/main' && 'main' || github.head_ref }}

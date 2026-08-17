@@ -1,0 +1,21 @@
+# Cloudflare Pages – custom response headers
+
+# ── WASM: must be application/wasm so browsers can stream-compile ──
+/gravity_wasm/*.wasm
+  Content-Type: application/wasm
+
+# ── WebGPU shaders: serve as plain text for easier debugging ──
+/gravity_webgpu/*.wgsl
+  Content-Type: text/plain; charset=utf-8
+
+# ── Security headers for all pages ──
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: accelerometer=(), camera=(), microphone=()
+
+# ── Cross-Origin Isolation for SharedArrayBuffer (required by macroquad) ──
+/gravity_wasm/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
