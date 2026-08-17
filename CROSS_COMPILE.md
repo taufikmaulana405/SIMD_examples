@@ -1,137 +1,100 @@
 # Cross-Compiling Rust for Windows from Linux
 
-This guide explains how to compile a Rust program on Linux to produce a Windows `.exe` binary, with AVX2 SIMD instruction support.
+This guide explains how to compile Rust programs on Linux or WSL into Windows `.exe` binaries. The generic instructions apply to the CPU examples; `gravity_cuda` has additional CUDA-specific requirements documented below.
 
----
+## Generic prerequisites
 
-## Prerequisites
+| Component | Value |
+|---|---|
+| Rust target | `x86_64-pc-windows-gnu` |
+| Windows linker | `mingw-w64` |
 
-| Component | Version (used when this guide was written) |
-|-----------|-------------------------------------------|
-| `rustc` / `cargo` | 1.97.1 |
-| `mingw-w64` (GCC) | 13-win32 |
-| Rust Target | `x86_64-pc-windows-gnu` |
-
----
-
-## Step 1 — Install Rust
-
-If Rust is not yet installed, run:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-source "$HOME/.cargo/env"
-```
-
-Verify installation:
-
-```bash
-rustc --version
-cargo --version
-```
-
----
-
-## Step 2 — Install `mingw-w64` (Windows Linker)
-
-`mingw-w64` provides the linker and C runtime libraries needed to produce Windows binaries from Linux.
+Install MinGW and the Rust target:
 
 ```bash
 sudo apt-get install -y mingw-w64
-```
-
-Verify:
-
-```bash
-x86_64-w64-mingw32-gcc --version
-```
-
----
-
-## Step 3 — Add the Windows Target to Rust
-
-```bash
 rustup target add x86_64-pc-windows-gnu
-```
-
-Check installed targets:
-
-```bash
+x86_64-w64-mingw32-gcc --version
 rustup target list --installed
 ```
 
----
-
-## Step 4 — Compile
-
-Navigate to your Rust project directory, then run:
+Build a regular project with:
 
 ```bash
 RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
 ```
 
-### Flag Explanation
+The output is placed at:
 
-| Flag | Description |
-|------|-------------|
-| `--target x86_64-pc-windows-gnu` | Produces a 64-bit Windows binary using the GNU (MinGW) toolchain |
-| `-C target-cpu=x86-64-v3` | Enables AVX2 and other modern instructions (equivalent to Intel/AMD 4th gen and newer) |
-| `--release` | Full optimization mode (no debug info, code is optimized) |
-
----
-
-## Step 5 — Output Location
-
-Once the build is complete, the `.exe` file will be at:
-
-```
-<project-name>/target/x86_64-pc-windows-gnu/release/<project-name>.exe
+```text
+<project>/target/x86_64-pc-windows-gnu/release/<project>.exe
 ```
 
-Example for this project:
+The resulting PE32+ executable runs on Windows, not Linux. A Windows display environment is required for Macroquad applications.
 
-```
-gravity_simd_avx2/target/x86_64-pc-windows-gnu/release/gravity_simd_avx2.exe
-```
+## CUDA cross-compilation (`gravity_cuda`)
 
----
+`gravity_cuda` uses the CUDA Driver API through `rustacuda`. Its `build.rs` invokes `nvcc` to compile the CUDA kernel into PTX. For the Windows GNU target, it automatically reads exports from `gravity_cuda/nvcuda.dll`, creates a temporary `.def` and `libcuda.dll.a` in Cargo's `OUT_DIR`, and links the generated import library.
 
-## Quick Reference
+Install the Rust target and MinGW as above, then build from the repository root:
 
 ```bash
-# 1. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source "$HOME/.cargo/env"
+export CUDA_HOME=/usr/local/cuda
+export CUDA_ARCH=compute_86
 
-# 2. Install Windows linker
-sudo apt-get install -y mingw-w64
-
-# 3. Add Windows target
-rustup target add x86_64-pc-windows-gnu
-
-# 4. Compile
-cd <project-directory>
-RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release --target x86_64-pc-windows-gnu
+cargo build \
+  --manifest-path gravity_cuda/Cargo.toml \
+  --release \
+  --target x86_64-pc-windows-gnu
 ```
 
----
+By default the build uses:
 
-## `target-cpu` Levels for AVX2
+```text
+gravity_cuda/nvcuda.dll
+```
 
-Use one of the following values depending on your requirements:
+To use another Windows driver DLL, set:
 
-| Value | Instructions Enabled | CPU Support |
-|-------|---------------------|-------------|
-| `x86-64` | SSE2 only (baseline) | All x86-64 CPUs |
-| `x86-64-v2` | SSE4.2, POPCNT | Core 2 / Phenom II and newer |
-| `x86-64-v3` | **AVX2**, BMI1, BMI2, FMA | Haswell (2013) / Excavator (2015) and newer |
-| `x86-64-v4` | AVX-512 | Skylake-X / Zen 4 and newer |
-| `native` | All features of local CPU | Only suitable for non-cross-compilation |
+```bash
+export CUDA_DLL=/path/to/custom/nvcuda.dll
+```
 
----
+To bypass automatic generation and use a prebuilt GNU import library:
 
-## Additional Notes
+```bash
+export CUDA_IMPORT_LIB=/path/to/libcuda.dll.a
+# or:
+export CUDA_WINDOWS_LIB_DIR=/path/to/directory-containing-libcuda.dll.a
+```
 
-- The produced binary **only runs on Windows** (PE32+ format) and cannot be executed directly on Linux.
-- If the program uses graphics/audio libraries (such as Macroquad), all dependencies are statically linked by `mingw-w64`, so the `.exe` can be distributed directly without any additional installation on the user's side.
-- For projects requiring the Visual C++ Runtime (MSVC), use the `x86_64-pc-windows-msvc` target with a different toolchain (more complex, requires Wine + MSVC headers).
+Automatic generation requires an export inspection tool (`llvm-objdump` or MinGW `objdump`) and an import-library tool (`x86_64-w64-mingw32-dlltool`, `dlltool`, or `llvm-dlltool`). No Windows CUDA SDK is needed for this conversion; Linux `nvcc` is still needed to compile PTX.
+
+Expected artifact:
+
+```text
+gravity_cuda/target/x86_64-pc-windows-gnu/release/gravity_cuda.exe
+```
+
+### DLL and runtime safety
+
+The copied `nvcuda.dll` is used only as a build-time source of exported symbol names. Do not ship it with the executable or replace the Windows system driver DLL. At runtime, Windows must load the NVIDIA driver's own `nvcuda.dll` from `C:\Windows\System32`.
+
+The Windows computer needs a supported NVIDIA GPU and driver, but not necessarily the CUDA Toolkit. Verify the driver before launching:
+
+```powershell
+nvidia-smi
+.\gravity_cuda.exe
+```
+
+If no `nvcuda.dll` exists at the default project path and `CUDA_DLL`/`CUDA_IMPORT_LIB` is not set, the build fails with an actionable message. A Linux `libcuda.so` cannot satisfy a Windows GNU link. Native Windows MSVC with Visual Studio Build Tools and the Windows CUDA Toolkit is an alternative.
+
+## CPU target levels
+
+| Value | Instructions | Typical support |
+|---|---|---|
+| `x86-64` | SSE2 baseline | All x86-64 CPUs |
+| `x86-64-v2` | SSE4.2, POPCNT | Newer x86-64 CPUs |
+| `x86-64-v3` | **AVX2**, BMI1, BMI2, FMA | Haswell/Excavator and newer |
+| `x86-64-v4` | AVX-512 | Selected newer CPUs |
+| `native` | Host CPU features | Not suitable for cross-compilation |

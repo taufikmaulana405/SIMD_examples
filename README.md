@@ -161,6 +161,23 @@ cargo run --release
 
 ---
 
+## gravity_cuda
+
+`gravity_cuda` is a separate NVIDIA CUDA prototype. Rust uses the CUDA Driver API through `rustacuda`, while `build.rs` compiles `gravity_cuda/kernels/gravity.cu` to PTX with `nvcc`. CUDA physics is copied to a host snapshot for the initial Macroquad renderer; CUDA/OpenGL interop and the full hashed-grid collision pipeline remain follow-up optimizations.
+
+### Build and run
+
+```bash
+cd gravity_cuda
+cargo run --release
+```
+
+CUDA Toolkit (`nvcc`), a compatible NVIDIA driver, and a visible NVIDIA GPU are required at runtime. Set `CUDA_HOME`/`CUDA_PATH` when `nvcc` is not on `PATH`; set `CUDA_ARCH` to choose a PTX virtual architecture, for example `CUDA_ARCH=compute_86`. To cross-compile a Windows `.exe` from Linux/WSL, use target `x86_64-pc-windows-gnu`. The build automatically uses `gravity_cuda/nvcuda.dll` by default, or a custom path supplied through `CUDA_DLL`, and generates its temporary GNU import library. See [`gravity_cuda/README.md`](gravity_cuda/README.md) for the exact command and limitations.
+
+---
+
+---
+
 ## Checking CPU Support
 
 ### Linux

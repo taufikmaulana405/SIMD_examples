@@ -1,0 +1,17 @@
+[package]
+name = "gravity_cuda"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+bytemuck = { version = "1.15", features = ["derive"] }
+macroquad = "0.4.15"
+rand = "0.8"
+rustacuda = "0.1"
+thiserror = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
