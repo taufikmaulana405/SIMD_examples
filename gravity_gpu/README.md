@@ -48,10 +48,21 @@ For small configurations up to 2,000 particles, the exact-style serialized swap-
 
 The all-pairs gravity solver is intentionally demanding. Lower `PARTICLE_COUNT` in `src/main.rs` when testing a weaker GPU. The broad-phase collision path avoids materializing candidate pairs, whose worst-case count would be approximately 50 million at 10,000 particles.
 
+## HUD statistics
+
+The in-window HUD reports the authoritative GPU statistics for the completed simulation buffer:
+
+- current live particle count;
+- largest live particle mass and its percentage of the initial total mass;
+- current position of the largest particle;
+- signed particle-count change per second; and
+- signed largest-mass change per second.
+
+The rates are calculated from successive synchronized GPU samples. They start at zero after reset and remain signed, so a merge normally produces a negative particle-count rate and a positive largest-mass rate. Statistics are sampled independently of trail visibility.
+
 ## Current limitations
 
-- The title currently provides the live compact status display; a richer in-window statistics panel can be layered on without changing the simulation path.
 - GPU arithmetic is not expected to be bitwise identical to AVX2.
-- The trail/statistics snapshot still scans the fixed particle capacity and uses a synchronized readback; this is bounded but can be optimized later with a GPU reduction.
+- The statistics snapshot scans the fixed particle capacity and uses a synchronized readback; this is bounded but can be optimized later with a GPU reduction.
 - Grid overflow is reported by the collision shader and causes that round to remain bounded; extremely dense configurations may therefore merge more slowly.
 - `wgpu_glyph` is not used because its older releases target an incompatible `wgpu` version.

@@ -27,6 +27,7 @@ const SOFTENING_SQUARED: f32 = 9.0;
 const RADIUS_SCALE: f32 = 0.45;
 const SPAWN_RADIUS: f32 = 1200.0;
 const TRAIL_SAMPLE_INTERVAL: f32 = 1.0 / 45.0;
+const STATS_SAMPLE_INTERVAL: f32 = 0.25;
 const TRAIL_MAX_AGE: f32 = 40.0;
 // Keep a fixed, predictable trail budget: 90 snapshots (2 seconds) at 45 Hz.
 // 900,000 records × 32 bytes is about 28.8 MB on the GPU.
@@ -113,6 +114,13 @@ struct State {
     accumulator: f32,
     last_frame: Instant,
     total_mass: f32,
+    active_count: usize,
+    largest_mass: f32,
+    largest_position: [f32; 2],
+    particle_rate_per_second: f32,
+    largest_mass_rate_per_second: f32,
+    stats_clock: f32,
+    has_stats_sample: bool,
     trails_visible: bool,
     trail_clock: f32,
     trail_accumulator: f32,
@@ -121,6 +129,7 @@ struct State {
     trail_upload: Vec<TrailGpu>,
     trail_sample_in_flight: bool,
     staging_buffer: wgpu::Buffer,
+    control_staging_buffer: wgpu::Buffer,
     physics_steps: u64,
     fps: f32,
     fps_elapsed: f32,
@@ -255,7 +264,9 @@ impl State {
                 merge_count: 0,
                 _padding: [0; 5],
             }),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         });
         let render_params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("render parameters"),
@@ -272,6 +283,12 @@ impl State {
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("particle readback"),
             size: (PARTICLE_COUNT * 32) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let control_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("simulation control readback"),
+            size: std::mem::size_of::<SimControl>() as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -569,6 +586,17 @@ impl State {
             accumulator: 0.0,
             last_frame: Instant::now(),
             total_mass,
+            active_count: PARTICLE_COUNT,
+            largest_mass: initial.chunks_exact(8).map(|p| p[4]).fold(0.0, f32::max),
+            largest_position: initial
+                .chunks_exact(8)
+                .max_by(|a, b| a[4].total_cmp(&b[4]))
+                .map(|p| [p[0], p[1]])
+                .unwrap_or([0.0, 0.0]),
+            particle_rate_per_second: 0.0,
+            largest_mass_rate_per_second: 0.0,
+            stats_clock: 0.0,
+            has_stats_sample: false,
             trails_visible: true,
             trail_clock: 0.0,
             trail_accumulator: 0.0,
@@ -577,6 +605,7 @@ impl State {
             trail_upload: Vec::with_capacity(TRAIL_CAPACITY),
             trail_sample_in_flight: false,
             staging_buffer,
+            control_staging_buffer,
             physics_steps: 0,
             fps: 0.0,
             fps_elapsed: 0.0,
@@ -611,6 +640,13 @@ impl State {
             }),
         );
         self.total_mass = mass;
+        self.active_count = PARTICLE_COUNT;
+        self.largest_mass = 0.0;
+        self.largest_position = [0.0, 0.0];
+        self.particle_rate_per_second = 0.0;
+        self.largest_mass_rate_per_second = 0.0;
+        self.stats_clock = 0.0;
+        self.has_stats_sample = false;
         self.particle_index = 0;
         self.accumulator = 0.0;
         self.trail_clock = 0.0;
@@ -620,7 +656,64 @@ impl State {
         self.trail_upload.clear();
         self.trail_sample_in_flight = false;
     }
+    fn readback_stats(&mut self) {
+        let control_slice = self.control_staging_buffer.slice(..);
+        let (control_tx, control_rx) = mpsc::channel();
+        control_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = control_tx.send(result);
+        });
+        self.device.poll(wgpu::Maintain::Wait);
+        if control_rx.recv().ok().and_then(Result::ok).is_none() {
+            return;
+        }
+        let control_view = control_slice.get_mapped_range();
+        let control_words: &[u32] = bytemuck::cast_slice(&control_view);
+        let active_count =
+            (control_words.first().copied().unwrap_or(0) as usize).min(PARTICLE_COUNT);
+        drop(control_view);
+        self.control_staging_buffer.unmap();
+
+        let particle_slice = self.staging_buffer.slice(..);
+        let (particle_tx, particle_rx) = mpsc::channel();
+        particle_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = particle_tx.send(result);
+        });
+        self.device.poll(wgpu::Maintain::Wait);
+        if particle_rx.recv().ok().and_then(Result::ok).is_none() {
+            return;
+        }
+        let particle_view = particle_slice.get_mapped_range();
+        let records: &[f32] = bytemuck::cast_slice(&particle_view);
+        let mut largest_mass = 0.0;
+        let mut largest_position = [0.0; 2];
+        let scan_count = active_count.min(records.len() / 8);
+        for p in records[..scan_count * 8].chunks_exact(8) {
+            if p[6] >= 0.5 && p[4] > largest_mass {
+                largest_mass = p[4];
+                largest_position = [p[0], p[1]];
+            }
+        }
+        drop(particle_view);
+        self.staging_buffer.unmap();
+
+        if self.has_stats_sample && self.stats_clock > 0.0 {
+            let seconds = self.stats_clock;
+            self.particle_rate_per_second =
+                (active_count as f32 - self.active_count as f32) / seconds;
+            self.largest_mass_rate_per_second = (largest_mass - self.largest_mass) / seconds;
+        } else {
+            self.particle_rate_per_second = 0.0;
+            self.largest_mass_rate_per_second = 0.0;
+        }
+        self.active_count = active_count;
+        self.largest_mass = largest_mass;
+        self.largest_position = largest_position;
+        self.has_stats_sample = true;
+        self.stats_clock = 0.0;
+    }
+
     fn step(&mut self) {
+        let collect_stats = !self.has_stats_sample || self.stats_clock >= STATS_SAMPLE_INTERVAL;
         let params = SimParams {
             count: PARTICLE_COUNT as u32,
             _padding: 0,
@@ -698,9 +791,28 @@ impl State {
             pass.set_bind_group(0, &self.sim_bind_groups[final_source], &[]);
             pass.dispatch_workgroups((PARTICLE_COUNT as u32).div_ceil(WORKGROUP_SIZE), 1, 1);
         }
+        if collect_stats {
+            encoder.copy_buffer_to_buffer(
+                &self.particles[final_destination],
+                0,
+                &self.staging_buffer,
+                0,
+                (PARTICLE_COUNT * 32) as u64,
+            );
+            encoder.copy_buffer_to_buffer(
+                &self.sim_control,
+                0,
+                &self.control_staging_buffer,
+                0,
+                std::mem::size_of::<SimControl>() as u64,
+            );
+        }
         self.queue.submit(Some(encoder.finish()));
         self.particle_index = final_destination;
         self.physics_steps += 1;
+        if collect_stats {
+            self.readback_stats();
+        }
     }
     fn snapshot_trails(&mut self) {
         if self.trail_sample_in_flight {
@@ -787,6 +899,7 @@ impl State {
         }
         self.trail_clock += elapsed;
         self.trail_accumulator += elapsed;
+        self.stats_clock += elapsed;
         self.accumulator += elapsed.min(0.02) * self.time_scale;
         let mut steps = 0;
         while self.accumulator >= DT && steps < MAX_PHYSICS_STEPS_PER_FRAME {
@@ -811,7 +924,28 @@ impl State {
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.heading("Simulation");
-                    ui.label(format!("{} particles", PARTICLE_COUNT));
+                    ui.label(format!("Current particles: {}", self.active_count));
+                    let largest_share = if self.total_mass > 0.0 {
+                        self.largest_mass / self.total_mass * 100.0
+                    } else {
+                        0.0
+                    };
+                    ui.label(format!(
+                        "Largest mass: {:.1} ({:.1}%)",
+                        self.largest_mass, largest_share
+                    ));
+                    ui.label(format!(
+                        "Largest position: ({:.1}, {:.1})",
+                        self.largest_position[0], self.largest_position[1]
+                    ));
+                    ui.label(format!(
+                        "Particle change: {:+.1} /s",
+                        self.particle_rate_per_second
+                    ));
+                    ui.label(format!(
+                        "Largest mass change: {:+.1} /s",
+                        self.largest_mass_rate_per_second
+                    ));
                     ui.label(format!("Total mass: {:.0}", self.total_mass));
                     ui.label(format!("Physics steps: {}", self.physics_steps));
                     ui.label(format!("FPS: {:.0}", self.fps));
@@ -854,7 +988,7 @@ impl State {
                 self.total_mass,
             ],
             counts: [
-                PARTICLE_COUNT as u32,
+                self.active_count as u32,
                 self.trails.len() as u32,
                 self.trail_clock.to_bits(),
                 0,
@@ -945,7 +1079,7 @@ impl State {
         };
         self.window.set_title(&format!(
             "Gravity GPU | {} particles | {} | {:.0} FPS | {:.2}x | Trails {} ({})",
-            PARTICLE_COUNT,
+            self.active_count,
             state,
             self.fps,
             self.time_scale,
