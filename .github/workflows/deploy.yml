@@ -105,6 +105,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: whoami |
-            pages project list |
+          command: |
+            whoami
+            pages project list
             pages deploy dist --project-name=gravity-simulation --branch=${{ github.ref == 'refs/heads/main' && 'main' || github.head_ref }}
