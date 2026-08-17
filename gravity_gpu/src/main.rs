@@ -6,6 +6,9 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
+use egui::Context;
+use egui_wgpu::ScreenDescriptor;
+use egui_winit::State as EguiWinitState;
 use rand::Rng;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -29,12 +32,15 @@ const TRAIL_MAX_AGE: f32 = 40.0;
 // 900,000 records × 32 bytes is about 28.8 MB on the GPU.
 const TRAIL_MAX_SAMPLES: usize = 90;
 const TRAIL_CAPACITY: usize = PARTICLE_COUNT * TRAIL_MAX_SAMPLES;
-const MAX_PHYSICS_STEPS_PER_FRAME: u32 = 4;
-// The serialized merge kernel is intentionally disabled for the 10,000-particle
-// default; it remains available for smaller runs where its bounded workload is usable.
-const COLLISION_MAX_PARTICLES: usize = 4_000;
+// The all-pairs solver already performs 100 million pair evaluations per
+// physics step at the default size. Keep frame catch-up bounded so a stalled
+// frame cannot queue an unbounded amount of GPU work.
+const MAX_PHYSICS_STEPS_PER_FRAME: u32 = 2;
+// The deterministic merge kernel is serialized and O(N²). It is deliberately
+// limited to smaller runs until a tiled GPU merge implementation is available.
+const COLLISION_MAX_PARTICLES: usize = 2_000;
 const COLLISION_INTERVAL: u32 = 8;
-const TRAIL_STRIDE: u64 = 32;
+const TRAIL_STRIDE: u64 = 32; // vec2 position + radius + brightness + age + padding.
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -51,7 +57,9 @@ struct SimParams {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct SimControl {
     active_count: u32,
-    _padding: [u32; 7],
+    output_count: u32,
+    merge_count: u32,
+    _padding: [u32; 5],
 }
 
 #[repr(C)]
@@ -87,6 +95,9 @@ struct State {
     sim_control: wgpu::Buffer,
     render_params: wgpu::Buffer,
     collision_pipeline: wgpu::ComputePipeline,
+    collision_pipelines: [wgpu::ComputePipeline; 5],
+    collision_bind_groups: [wgpu::BindGroup; 2],
+    _collision_meta: wgpu::Buffer,
     particles: [wgpu::Buffer; 2],
     sim_bind_groups: [wgpu::BindGroup; 2],
     render_bind_groups: [wgpu::BindGroup; 2],
@@ -114,6 +125,9 @@ struct State {
     fps: f32,
     fps_elapsed: f32,
     fps_frames: u32,
+    egui_ctx: Context,
+    egui_state: EguiWinitState,
+    egui_renderer: egui_wgpu::Renderer,
 }
 
 fn create_particles() -> (Vec<f32>, f32) {
@@ -237,7 +251,9 @@ impl State {
             label: Some("simulation control"),
             contents: bytemuck::bytes_of(&SimControl {
                 active_count: PARTICLE_COUNT as u32,
-                _padding: [0; 7],
+                output_count: PARTICLE_COUNT as u32,
+                merge_count: 0,
+                _padding: [0; 5],
             }),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
@@ -245,6 +261,12 @@ impl State {
             label: Some("render parameters"),
             size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let collision_meta = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("collision grid metadata"),
+            size: (32768 * 4 + 10000 * 4 + 10000 * 4 + 8) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -322,6 +344,36 @@ impl State {
                 &sim_control,
             ),
         ];
+        let collision_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("collision layout"),
+            entries: &[
+                uniform_entry(0),
+                storage_entry(1, true),
+                storage_entry(2, false),
+                storage_entry(3, false),
+                storage_entry(4, false),
+            ],
+        });
+        let collision_bind_groups = [
+            make_collision_bind_group(
+                &device,
+                &collision_layout,
+                &sim_params,
+                &particles[0],
+                &collision_meta,
+                &particles[1],
+                &sim_control,
+            ),
+            make_collision_bind_group(
+                &device,
+                &collision_layout,
+                &sim_params,
+                &particles[1],
+                &collision_meta,
+                &particles[0],
+                &sim_control,
+            ),
+        ];
         let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("render layout"),
             entries: &[
@@ -383,6 +435,45 @@ impl State {
                 "../shaders/simulation.wgsl"
             ))),
         });
+        let collision_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("bounded collision shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "../shaders/collision.wgsl"
+            ))),
+        });
+        let collision_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("collision pipeline layout"),
+                bind_group_layouts: &[&collision_layout],
+                push_constant_ranges: &[],
+            });
+        let collision_pipelines = [
+            ("collision clear", "clear"),
+            ("collision grid", "build_grid"),
+            ("collision proposals", "propose"),
+            ("collision merge", "merge_compact"),
+            ("collision finalize", "finalize"),
+        ]
+        .map(|(label, entry_point)| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&collision_pipeline_layout),
+                module: &collision_module,
+                entry_point,
+            })
+        });
+        let collision_serial_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("serial collision pipeline layout"),
+                bind_group_layouts: &[&sim_layout],
+                push_constant_ranges: &[],
+            });
+        let collision_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("serial collision merge pipeline"),
+            layout: Some(&collision_serial_layout),
+            module: &sim_module,
+            entry_point: "merge_serial",
+        });
         let render_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("particle and trail shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/render.wgsl"))),
@@ -403,12 +494,6 @@ impl State {
             layout: Some(&sim_pipeline_layout),
             module: &sim_module,
             entry_point: "finish",
-        });
-        let collision_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("collision merge pipeline"),
-            layout: Some(&sim_pipeline_layout),
-            module: &sim_module,
-            entry_point: "merge_serial",
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -446,6 +531,15 @@ impl State {
         };
         let render_pipeline = mk_pipeline("particle render pipeline", "particle_vertex");
         let trail_pipeline = mk_pipeline("trail render pipeline", "trail_vertex");
+        let egui_ctx = Context::default();
+        let egui_state = EguiWinitState::new(
+            egui_ctx.clone(),
+            egui::ViewportId::ROOT,
+            window.as_ref(),
+            None,
+            None,
+        );
+        let egui_renderer = egui_wgpu::Renderer::new(&device, format, None, 1);
         let zoom = size.width.min(size.height) as f32 / (SPAWN_RADIUS * 2.25);
         Ok(Self {
             window: window.clone(),
@@ -457,6 +551,9 @@ impl State {
             sim_control,
             render_params,
             collision_pipeline,
+            collision_pipelines,
+            collision_bind_groups,
+            _collision_meta: collision_meta,
             particles,
             sim_bind_groups,
             render_bind_groups,
@@ -484,6 +581,9 @@ impl State {
             fps: 0.0,
             fps_elapsed: 0.0,
             fps_frames: 0,
+            egui_ctx,
+            egui_state,
+            egui_renderer,
         })
     }
 
@@ -505,7 +605,9 @@ impl State {
             0,
             bytemuck::bytes_of(&SimControl {
                 active_count: PARTICLE_COUNT as u32,
-                _padding: [0; 7],
+                output_count: PARTICLE_COUNT as u32,
+                merge_count: 0,
+                _padding: [0; 5],
             }),
         );
         self.total_mass = mass;
@@ -546,16 +648,46 @@ impl State {
             pass.set_bind_group(0, &self.sim_bind_groups[current], &[]);
             pass.dispatch_workgroups((PARTICLE_COUNT as u32).div_ceil(WORKGROUP_SIZE), 1, 1);
         }
-        if PARTICLE_COUNT <= COLLISION_MAX_PARTICLES
-            && self.physics_steps % COLLISION_INTERVAL as u64 == 0
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("collision merge"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.collision_pipeline);
-            pass.set_bind_group(0, &self.sim_bind_groups[next], &[]);
-            pass.dispatch_workgroups(1, 1, 1);
+        let final_source;
+        let final_destination;
+        if PARTICLE_COUNT <= COLLISION_MAX_PARTICLES {
+            if self.physics_steps % COLLISION_INTERVAL as u64 == 0 {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("serial collision merge"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.collision_pipeline);
+                pass.set_bind_group(0, &self.sim_bind_groups[next], &[]);
+                pass.dispatch_workgroups(1, 1, 1);
+            }
+            final_source = next;
+            final_destination = current;
+        } else {
+            for (round, _) in (0..2).enumerate() {
+                let source_index = if round % 2 == 0 { next } else { current };
+                let collision_bind_group = &self.collision_bind_groups[source_index];
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some(if round == 0 {
+                        "collision grid round 1"
+                    } else {
+                        "collision grid round 2"
+                    }),
+                    timestamp_writes: None,
+                });
+                pass.set_bind_group(0, collision_bind_group, &[]);
+                pass.set_pipeline(&self.collision_pipelines[0]);
+                pass.dispatch_workgroups(ceil_div(32768, WORKGROUP_SIZE), 1, 1);
+                pass.set_pipeline(&self.collision_pipelines[1]);
+                pass.dispatch_workgroups(ceil_div(PARTICLE_COUNT, WORKGROUP_SIZE), 1, 1);
+                pass.set_pipeline(&self.collision_pipelines[2]);
+                pass.dispatch_workgroups(ceil_div(PARTICLE_COUNT, WORKGROUP_SIZE), 1, 1);
+                pass.set_pipeline(&self.collision_pipelines[3]);
+                pass.dispatch_workgroups(ceil_div(PARTICLE_COUNT, WORKGROUP_SIZE), 1, 1);
+                pass.set_pipeline(&self.collision_pipelines[4]);
+                pass.dispatch_workgroups(1, 1, 1);
+            }
+            final_source = next;
+            final_destination = current;
         }
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -563,11 +695,11 @@ impl State {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.finish_pipeline);
-            pass.set_bind_group(0, &self.sim_bind_groups[next], &[]);
+            pass.set_bind_group(0, &self.sim_bind_groups[final_source], &[]);
             pass.dispatch_workgroups((PARTICLE_COUNT as u32).div_ceil(WORKGROUP_SIZE), 1, 1);
         }
         self.queue.submit(Some(encoder.finish()));
-        self.particle_index = current;
+        self.particle_index = final_destination;
         self.physics_steps += 1;
     }
     fn snapshot_trails(&mut self) {
@@ -655,7 +787,7 @@ impl State {
         }
         self.trail_clock += elapsed;
         self.trail_accumulator += elapsed;
-        self.accumulator += elapsed.min(0.05) * self.time_scale;
+        self.accumulator += elapsed.min(0.02) * self.time_scale;
         let mut steps = 0;
         while self.accumulator >= DT && steps < MAX_PHYSICS_STEPS_PER_FRAME {
             self.step();
@@ -671,6 +803,49 @@ impl State {
         }
     }
     fn render(&mut self) {
+        let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
+        let ctx = self.egui_ctx.clone();
+        let full_output = ctx.run(raw_input, |ctx| {
+            egui::Window::new("Gravity GPU")
+                .default_pos([18.0, 18.0])
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.heading("Simulation");
+                    ui.label(format!("{} particles", PARTICLE_COUNT));
+                    ui.label(format!("Total mass: {:.0}", self.total_mass));
+                    ui.label(format!("Physics steps: {}", self.physics_steps));
+                    ui.label(format!("FPS: {:.0}", self.fps));
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(if self.paused { "Resume" } else { "Pause" })
+                            .clicked()
+                        {
+                            self.paused = !self.paused;
+                        }
+                        if ui.button("Reset").clicked() {
+                            self.reset();
+                        }
+                    });
+                    ui.checkbox(&mut self.trails_visible, "Show trails");
+                    ui.add(egui::Slider::new(&mut self.time_scale, 0.125..=4.0).text("Time scale"));
+                    ui.add(egui::Slider::new(&mut self.zoom, 0.05..=5.0).text("Zoom"));
+                    ui.label("Space: pause • T: trails • R: reset • ↑/↓: speed");
+                });
+        });
+        self.egui_state
+            .handle_platform_output(self.window.as_ref(), full_output.platform_output);
+        let paint_jobs = self
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: full_output.pixels_per_point,
+        };
+        for (id, image_delta) in &full_output.textures_delta.set {
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *id, image_delta);
+        }
         let data = RenderParams {
             viewport: [
                 self.config.width as f32,
@@ -733,6 +908,34 @@ impl State {
             pass.set_bind_group(0, &self.render_bind_groups[self.particle_index], &[]);
             pass.draw(0..6, 0..PARTICLE_COUNT as u32);
         }
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui overlay"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.egui_renderer
+                .render(&mut pass, &paint_jobs, &screen_descriptor);
+        }
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
         self.queue.submit(Some(encoder.finish()));
         let state = if self.paused { "PAUSED" } else { "RUNNING" };
         let trail_state = if self.trails_visible {
@@ -759,6 +962,73 @@ impl State {
         self.render();
     }
 }
+fn ceil_div(value: usize, divisor: u32) -> u32 {
+    (value as u32).div_ceil(divisor)
+}
+
+fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn make_collision_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    params: &wgpu::Buffer,
+    source: &wgpu::Buffer,
+    meta: &wgpu::Buffer,
+    destination: &wgpu::Buffer,
+    control: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("collision bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: source.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: meta.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: destination.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: control.as_entire_binding(),
+            },
+        ],
+    })
+}
+
 fn make_sim_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -828,34 +1098,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_loop.run(move |event, target| {
         target.set_control_flow(ControlFlow::Poll);
         match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => target.exit(),
-                WindowEvent::Resized(size) => state.resize(size),
-                WindowEvent::MouseWheel {
-                    delta: MouseScrollDelta::LineDelta(_, y),
-                    ..
-                } => {
-                    state.zoom = (state.zoom * 1.03_f32.powf(y.clamp(-1.0, 1.0))).clamp(0.05, 5.0);
+            Event::WindowEvent { event, .. } => {
+                let response = state
+                    .egui_state
+                    .on_window_event(state.window.as_ref(), &event);
+                if response.consumed {
+                    if matches!(event, WindowEvent::RedrawRequested) {
+                        state.redraw();
+                    }
+                    return;
                 }
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(code),
-                            state: ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                } => match code {
-                    KeyCode::Space => state.paused = !state.paused,
-                    KeyCode::KeyT => state.trails_visible = !state.trails_visible,
-                    KeyCode::KeyR => state.reset(),
-                    KeyCode::ArrowUp => state.time_scale = (state.time_scale * 2.0).min(4.0),
-                    KeyCode::ArrowDown => state.time_scale = (state.time_scale * 0.5).max(0.125),
+                match event {
+                    WindowEvent::CloseRequested => target.exit(),
+                    WindowEvent::Resized(size) => state.resize(size),
+                    WindowEvent::MouseWheel {
+                        delta: MouseScrollDelta::LineDelta(_, y),
+                        ..
+                    } => {
+                        state.zoom =
+                            (state.zoom * 1.03_f32.powf(y.clamp(-1.0, 1.0))).clamp(0.05, 5.0);
+                    }
+                    WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                physical_key: PhysicalKey::Code(code),
+                                state: ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    } => match code {
+                        KeyCode::Space => state.paused = !state.paused,
+                        KeyCode::KeyT => state.trails_visible = !state.trails_visible,
+                        KeyCode::KeyR => state.reset(),
+                        KeyCode::ArrowUp => state.time_scale = (state.time_scale * 2.0).min(4.0),
+                        KeyCode::ArrowDown => {
+                            state.time_scale = (state.time_scale * 0.5).max(0.125)
+                        }
+                        _ => {}
+                    },
+                    WindowEvent::RedrawRequested => state.redraw(),
                     _ => {}
-                },
-                WindowEvent::RedrawRequested => state.redraw(),
-                _ => {}
-            },
+                }
+            }
             Event::AboutToWait => window.request_redraw(),
             _ => {}
         }

@@ -9,6 +9,9 @@ pollster = "0.3"
 rand = "0.8"
 wgpu = "0.19"
 winit = "0.29"
+egui = "0.27.2"
+egui-winit = "0.27.2"
+egui-wgpu = "0.27.2"
 
 [profile.release]
 opt-level = 3

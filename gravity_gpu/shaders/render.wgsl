@@ -7,7 +7,7 @@ struct Trail { position: vec2<f32>, radius: f32, brightness: f32, created: f32, 
 @group(0) @binding(0) var<uniform> params: RenderParams;
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
 @group(0) @binding(2) var<storage, read> trails: array<Trail>;
-struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) local: vec2<f32>, @location(1) color: vec4<f32>, };
+struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) local: vec2<f32>, @location(1) color: vec4<f32>, @location(2) transition: f32, };
 fn corner(v: u32) -> vec2<f32> { if (v == 0u) { return vec2<f32>(-1.0,-1.0); } if (v == 1u) { return vec2<f32>(1.0,-1.0); } if (v == 2u) { return vec2<f32>(-1.0,1.0); } if (v == 3u) { return vec2<f32>(-1.0,1.0); } if (v == 4u) { return vec2<f32>(1.0,-1.0); } return vec2<f32>(1.0,1.0); }
 fn clip_position(world: vec2<f32>, size: vec2<f32>) -> vec4<f32> { let pixel = world + params.viewport.xy * 0.5; let center = vec2<f32>(pixel.x / params.viewport.x * 2.0 - 1.0, 1.0 - pixel.y / params.viewport.y * 2.0); let extent = vec2<f32>(size.x / params.viewport.x * 2.0, -size.y / params.viewport.y * 2.0); return vec4<f32>(center + extent, 0.0, 1.0); }
 fn transition(f: f32) -> f32 { let p = clamp((f - 0.25) / 0.20, 0.0, 1.0); return p * p * (3.0 - 2.0 * p); }

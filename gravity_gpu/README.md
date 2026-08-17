@@ -1,16 +1,14 @@
 # gravity_gpu
 
-Native desktop GPU version of the gravity simulation. This project is a new project derived primarily from [`gravity_simd_avx2`](../gravity_simd_avx2), including its 10,000-particle baseline, initialization profile, gravity constants, and velocity-Verlet step. The AVX2 CPU acceleration is replaced with GPU compute through `wgpu`.
+Native desktop GPU version of the gravity simulation. This is a separate project derived primarily from [`gravity_simd_avx2`](../gravity_simd_avx2): it keeps the 10,000-particle baseline, initialization profile, constants, controls, trails, and velocity-Verlet ordering while replacing AVX2 arithmetic with `wgpu` compute shaders.
 
 ## Run
-
-From this directory:
 
 ```bash
 cargo run --release
 ```
 
-`wgpu` selects the available Vulkan, Direct3D 12, Metal, or other supported backend. A working graphics driver is required. The program prints the selected adapter and backend at startup.
+`wgpu` selects a supported Vulkan, Direct3D 12, Metal, or other backend. A working graphics driver and display server are required.
 
 ## Controls
 
@@ -23,30 +21,37 @@ cargo run --release
 | Mouse wheel | Zoom (0.05x–5x) |
 | Close window | Exit |
 
-The native renderer continuously presents frames, including while paused. Trails use a fixed 90-snapshot (2-second) GPU budget and a reusable bounded readback buffer; they fade with the AVX2 reference's 10-second half-life. Collision merging is throttled and disabled for the default 10,000-particle run because the current serialized fallback is not safe to execute every frame. GPU results may differ slightly from AVX2 because of floating-point evaluation order.
+The renderer continues presenting frames while paused. Trails use a fixed bounded GPU allocation and the AVX2 reference's fading behavior. GPU floating-point evaluation order can produce small numerical differences from the CPU reference.
 
-The window title provides a compact live HUD with simulation state, FPS, time scale, zoom, and trail count. A full in-window statistics overlay is planned for the next pass; current total mass remains available to the renderer and active particle state is maintained in a GPU control buffer.
+## Collision behavior
 
+The default 10,000-particle configuration uses a bounded, GPU-resident collision path:
+
+1. Live bodies are inserted into a fixed-size hashed uniform grid.
+2. Each body searches a bounded 3×3 neighborhood and proposes one overlapping partner.
+3. Only mutual proposals are merged, so a body cannot be written by two merges in one round.
+4. Survivors and weighted merged bodies are compacted into the other particle buffer.
+5. Two bounded rounds are run after each drift step so newly enlarged bodies can participate in another merge.
+
+The grid uses fixed O(N) auxiliary storage and caps bucket visits. Dense buckets set an overflow diagnostic instead of entering an unbounded shader loop. Scalable GPU collision preserves overlap geometry, mass-weighted position/velocity/brightness, conservation, and compacted active-prefix semantics. Because matching is parallel, its grouping and merge order are not bit-for-bit identical to AVX2.
+
+For small configurations up to 2,000 particles, the exact-style serialized swap-remove fallback remains available every eighth physics step. It is never used for the default 10,000-particle run because its single-invocation O(N²) scan can monopolize a GPU and make a desktop unresponsive.
 
 ## GPU design
 
-- Gravity is calculated in a WGSL compute shader using the same O(N²) all-pairs model as `gravity_simd_avx2`.
-- Two storage buffers are used for explicit ping-pong integration.
-- Collision/merge runs after position drift and before the second acceleration evaluation; it uses mass-weighted position, velocity, and brightness and repeatedly merges the current body with overlapping bodies.
-- The active particle count is stored in a GPU control buffer, and dead/merged records are excluded by the renderer.
-- Particle rendering is instanced and stays on the GPU.
-- The initial particle cloud and lightweight uniforms are uploaded by the CPU; collision physics does not require particle readback.
+- Gravity is an all-pairs O(N²) WGSL compute pass, matching the AVX2 reference model.
+- Two particle storage buffers provide explicit ping-pong integration and collision compaction.
+- The step order is drift, bounded collision rounds, final acceleration/half-step, then rendering.
+- Active count and collision output state remain in GPU storage; dead records are cleared from the active tail.
+- Particle and trail rendering are instanced and remain GPU-resident.
+- CPU readback is limited to the bounded trail/statistics snapshot and is not used to perform collision physics.
 
-The all-pairs solver performs O(N²) work, so performance depends on the GPU and driver. To test a weaker GPU, lower `PARTICLE_COUNT` in `src/main.rs`.
+The all-pairs gravity solver is intentionally demanding. Lower `PARTICLE_COUNT` in `src/main.rs` when testing a weaker GPU. The broad-phase collision path avoids materializing candidate pairs, whose worst-case count would be approximately 50 million at 10,000 particles.
 
 ## Current limitations
 
-- The merge kernel uses a single serialized invocation for deterministic swap-remove-like semantics. It is enabled only for runs at or below 4,000 particles and executes every eighth physics step; the default 10,000-particle run skips it to avoid GPU watchdogs.
-- Full AVX2-style in-window HUD statistics (largest mass and center of mass) still require a small asynchronous GPU reduction/readback pass.
-- Collision convergence currently follows the available compacted pass; a future pass can add multiple GPU convergence iterations for chains of newly enlarged bodies.
-- The font file is retained for a future native text overlay; no `wgpu_glyph` dependency is used because its older releases target incompatible `wgpu` versions.
-- `egui-wgpu` compatibility has been checked but is not yet wired into the render pass.
-
-The all-pairs solver performs O(N²) work, so performance depends on the GPU and driver. To test a weaker GPU, lower `PARTICLE_COUNT` in `src/main.rs`.
-
-The all-pairs solver performs O(N²) work, so performance depends on the GPU and driver. To test a weaker GPU, lower `PARTICLE_COUNT` in `src/main.rs`.
+- The title currently provides the live compact status display; a richer in-window statistics panel can be layered on without changing the simulation path.
+- GPU arithmetic is not expected to be bitwise identical to AVX2.
+- The trail/statistics snapshot still scans the fixed particle capacity and uses a synchronized readback; this is bounded but can be optimized later with a GPU reduction.
+- Grid overflow is reported by the collision shader and causes that round to remain bounded; extremely dense configurations may therefore merge more slowly.
+- `wgpu_glyph` is not used because its older releases target an incompatible `wgpu` version.

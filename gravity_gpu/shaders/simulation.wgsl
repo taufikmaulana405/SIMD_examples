@@ -18,7 +18,7 @@ struct Particle {
   alive: f32,
   _padding: f32,
 };
-struct SimControl { active_count: atomic<u32>, _padding: array<u32, 7>, };
+struct SimControl { active_count: atomic<u32>, output_count: u32, merge_count: u32, _padding: array<u32, 5>, };
 
 @group(0) @binding(3) var<storage, read_write> control: SimControl;
 
@@ -112,7 +112,14 @@ fn integrate(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn finish(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
-  if (index >= active_count()) { return; }
+  let live_count = active_count();
+  if (index >= params.count) { return; }
+  if (index >= live_count) {
+    var dead = destination[index];
+    dead.alive = 0.0;
+    destination[index] = dead;
+    return;
+  }
   var result = source[index];
   if (result.alive >= 0.5) {
     result.velocity += acceleration(index, result.position) * (params.dt * 0.5);
