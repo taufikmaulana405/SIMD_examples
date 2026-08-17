@@ -101,12 +101,8 @@ jobs:
 
       # ── 6. Deploy to Cloudflare Pages ────────────────────────────────────────
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
-          apiToken:      ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId:     ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName:   gravity-simulation
-          directory:     dist
-          gitHubToken:   ${{ secrets.GITHUB_TOKEN }}
-          # PR builds get a preview URL; pushes to main go to production
-          branch:        ${{ github.ref == 'refs/heads/main' && 'main' || github.head_ref }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=gravity-simulation --branch=${{ github.ref == 'refs/heads/main' && 'main' || github.head_ref }}
