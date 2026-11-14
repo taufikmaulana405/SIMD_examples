@@ -59,7 +59,7 @@ jobs:
       - name: Cache Cargo
         # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false or manual dispatch input
         if: ${{ (inputs.enable_cache != false) && (vars.ENABLE_BUILD_CACHE != 'false') }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
