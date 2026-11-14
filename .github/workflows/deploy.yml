@@ -25,15 +25,6 @@ on:
       - 'gravity_webgpu/**'
       - '.github/workflows/deploy.yml'
 
-  # Can also be triggered manually with custom options
-  workflow_dispatch:
-    inputs:
-      enable_cache:
-        description: 'Enable Cargo build cache'
-        required: false
-        type: boolean
-        default: true
-
 jobs:
   build-and-deploy:
     name: Build WASM → Deploy
@@ -58,7 +49,7 @@ jobs:
       # ── 3. Cache Cargo registry & build artifacts ─────────────────────────────
       - name: Cache Cargo
         # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false or manual dispatch input
-        if: ${{ (inputs.enable_cache != false) && (vars.ENABLE_BUILD_CACHE != 'false') }}
+        if: vars.ENABLE_BUILD_CACHE != 'false'
         uses: actions/cache@v6
         with:
           path: |
