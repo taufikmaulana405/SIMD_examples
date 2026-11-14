@@ -30,6 +30,17 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Cache Cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gravity_scalar/target
+          key: ${{ runner.os }}-cargo-scalar-${{ hashFiles('gravity_scalar/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-scalar-
+
       - name: Build gravity_scalar
         working-directory: gravity_scalar
         run: cargo build --locked --release --target x86_64-pc-windows-msvc

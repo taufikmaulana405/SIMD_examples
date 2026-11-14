@@ -48,7 +48,7 @@ jobs:
 
       # ── 3. Cache Cargo registry & build artifacts ─────────────────────────────
       - name: Cache Cargo
-        # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false or manual dispatch input
+        # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false
         if: vars.ENABLE_BUILD_CACHE != 'false'
         uses: actions/cache@v6
         with:
