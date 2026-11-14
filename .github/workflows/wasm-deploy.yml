@@ -1,4 +1,4 @@
-name: Build & Deploy to Cloudflare Pages
+name: Build & Deploy WASM to Cloudflare Pages
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
       # WebGPU source — pure static, deploy directly
       - 'gravity_webgpu/**'
       # The workflow file itself
-      - '.github/workflows/deploy.yml'
+      - '.github/workflows/wasm-deploy.yml'
 
   pull_request:
     branches: [main]
@@ -23,7 +23,7 @@ on:
       - '_redirects'
       - 'gravity_wasm/**'
       - 'gravity_webgpu/**'
-      - '.github/workflows/deploy.yml'
+      - '.github/workflows/wasm-deploy.yml'
 
 jobs:
   build-and-deploy:
