@@ -1,16 +1,16 @@
-name: Build gravity_scalar for Windows
+name: Build gravity_scalar
 
 on:
   push:
     branches: [main]
     paths:
       - 'gravity_scalar/**'
-      - '.github/workflows/gravity-scalar-windows.yml'
+      - '.github/workflows/scalar-build.yml'
   pull_request:
     branches: [main]
     paths:
       - 'gravity_scalar/**'
-      - '.github/workflows/gravity-scalar-windows.yml'
+      - '.github/workflows/scalar-build.yml'
   workflow_dispatch:
 
 permissions:
