@@ -1,0 +1,58 @@
+name: Build gravity_simd_avx2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gravity_simd_avx2/**'
+      - '.github/workflows/simd_avx2-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'gravity_simd_avx2/**'
+      - '.github/workflows/simd_avx2-build.yml'
+  workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+  build:
+    name: Build Windows x64 binary
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            gravity_simd_avx2/target
+          key: ${{ runner.os }}-cargo-simd-avx2-${{ hashFiles('gravity_simd_avx2/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-simd-avx2-
+
+      - name: Build gravity_simd_avx2
+        working-directory: gravity_simd_avx2
+        env:
+          RUSTFLAGS: "-C target-cpu=x86-64-v3"
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: gravity-simd-avx2-windows-x64
+          path: gravity_simd_avx2/target/x86_64-pc-windows-msvc/release/gravity_simd_avx2.exe
+          if-no-files-found: error
+          archive: false
