@@ -1,0 +1,56 @@
+name: Build gravity_gpu
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gravity_gpu/**'
+      - '.github/workflows/gpu-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'gravity_gpu/**'
+      - '.github/workflows/gpu-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows x64 binary
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false
+        if: vars.ENABLE_BUILD_CACHE != 'false'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gravity_gpu/target
+          key: ${{ runner.os }}-cargo-gpu-${{ hashFiles('gravity_gpu/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-gpu-
+
+      - name: Build gravity_gpu
+        working-directory: gravity_gpu
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc --package gsim_app --bin gsim_app
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: gravity-gpu-windows-x64
+          path: gravity_gpu/target/x86_64-pc-windows-msvc/release/gsim_app.exe
+          if-no-files-found: error
+          archive: false
