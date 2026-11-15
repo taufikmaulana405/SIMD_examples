@@ -59,9 +59,14 @@ impl Sim {
         word(&self.accel_valid, 0);
         word(&self.alive_count, 0);
         word(&self.trail_head, 0);
+        // merged_root is cleared per-step by `integrate`; zero it here for
+        // a clean initial state.
+        q.write_buffer(&self.merged_root, 0, &vec![0u8; self.cfg.n_max * 4]);
         self.sim_time = 0.0;
         self.trail_acc = 0.0;
         self.step_count = 0;
+        // Fresh positions: the acceleration cache is invalid.
+        self.accel_valid_cpu = false;
     }
 
     /// One compute dispatch into `encoder`.
@@ -95,9 +100,7 @@ impl Sim {
     fn step_inner(&mut self, timed: bool) -> Vec<(String, f64)> {
         if self.cfg.no_accel_cache {
             // A/B parity: force pass1 to recompute every step.
-            self.ctx
-                .queue
-                .write_buffer(&self.accel_valid, 0, &0u32.to_le_bytes());
+            self.accel_valid_cpu = false;
         }
         if timed {
             self.timer.begin_batch();
@@ -129,17 +132,34 @@ impl Sim {
         let serial = self.cfg.merge_mode == crate::cli::MergeMode::Serial;
 
         if tiled {
-            run!("pass1", &self.pipes.pass1, dwg);
+            // Acceleration cache (CPU-tracked): pass1 (re)computes only
+            // when the cache is invalid — the first step after
+            // spawn/upload, or every step with --no-accel-cache. This
+            // retires the GPU-side accel_valid flag protocol: its
+            // intra-dispatch race broke parity, and FXC forbids the
+            // early-return shader form. Skipping the dispatch recovers the
+            // intended optimization on every backend (on DX12, pass1 cost
+            // a full 760us O(n^2) evaluation per step).
+            if !self.accel_valid_cpu {
+                run!("pass1", &self.pipes.pass1, dwg);
+                self.accel_valid_cpu = true;
+            }
             run!("integrate", &self.pipes.integrate, d256);
             if serial {
                 run!("serial_parity", &self.pipes.serial, 1);
+                // Merge reorders bodies via swap-remove; the cached
+                // accelerations are stale for the new ordering.
+                self.accel_valid_cpu = false;
                 run!("force_always", &self.pipes.force_always, dwg);
+                self.accel_valid_cpu = true;
             } else {
                 run!("fused", &self.pipes.fused, dwg);
+                self.accel_valid_cpu = true;
                 run!("compress", &self.pipes.compress, d256);
                 run!("reduce", &self.pipes.reduce, d256);
                 run!("copy_back", &self.pipes.copy_back, d256);
                 run!("force", &self.pipes.force, dwg);
+                self.accel_valid_cpu = true;
             }
             run!("finish", &self.pipes.finish, d256);
         } else {

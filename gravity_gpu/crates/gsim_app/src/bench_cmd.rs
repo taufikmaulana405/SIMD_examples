@@ -80,18 +80,23 @@ pub fn run(cfg: &CliConfig) {
     let (best_wg, table) = runner.autotune(cfg.n);
     println!("autotune: best workgroup size = {best_wg} {table:?}");
 
-    // Bitwise parity: GPU serial-merge mode vs the scalar CPU reference.
-    let mut parity_ok = true;
-    for mode in [GpuMode::Naive, GpuMode::Tiled] {
-        let p = runner.parity_check(mode, PARITY_N, PARITY_STEPS);
-        let ok = p["match"].as_bool().unwrap_or(false);
-        parity_ok &= ok;
-        println!(
-            "parity {:?}/serial vs cpu: match={ok} cpu={} gpu={}",
-            mode, p["cpu_hash"], p["gpu_hash"]
-        );
-        runner.log("parity", p);
-    }
+    // Parity, redesigned 2026-10-18 for real-hardware honesty: GPU
+    // naive-vs-tiled bitwise match, per-mode determinism across two runs,
+    // and GPU-vs-CPU max position error under tolerance (see
+    // BenchmarkRunner::parity_check). Bitwise GPU-vs-CPU over full steps is
+    // unachievable across FP hardware (FMA contraction, sqrt precision).
+    let parity = runner.parity_check(PARITY_N, PARITY_STEPS);
+    let parity_ok = parity["ok"].as_bool().unwrap_or(false);
+    println!(
+        "parity: ok={parity_ok} cross_mode_bitwise={} det=[naive:{}, tiled:{}] cpu_max_err={} (tol {}) counts_match={}",
+        parity["cross_mode_bitwise_match"],
+        parity["modes"][0]["deterministic"],
+        parity["modes"][1]["deterministic"],
+        parity["cpu"]["max_position_error"],
+        parity["cpu"]["tolerance"],
+        parity["cpu"]["counts_match"],
+    );
+    runner.log("parity", parity.clone());
 
     // Rungs (2) and (3): naive and tiled ladder rungs at --n/--steps.
     let mut rungs = Vec::new();
@@ -169,6 +174,7 @@ pub fn run(cfg: &CliConfig) {
         "adapter": info,
         "seed": cfg.seed,
         "parity_ok": parity_ok,
+        "parity": parity,
         "autotune_best_workgroup": best_wg,
         "rungs": rungs,
         "sweep": sweep_json,

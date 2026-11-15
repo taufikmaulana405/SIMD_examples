@@ -52,3 +52,8 @@ struct TrailUni {
 @group(0) @binding(17) var<storage, read_write> partials_f: array<vec4<f32>, 1024>;
 @group(0) @binding(18) var<storage, read_write> partials_c: array<u32, 1024>;
 @group(0) @binding(19) var<uniform> trail_uni: TrailUni;
+// Per-body flag (binding 20): 1 if the body's merge component is nontrivial
+// (set by `compress` for every root that absorbed another body). Lets
+// `reduce` skip the O(n) member scan for singleton components — the scan
+// over all-n roots was O(n^2) per merge step (7.7 ms at N=10000 on DX12).
+@group(0) @binding(20) var<storage, read_write> merged_root: array<atomic<u32>>;

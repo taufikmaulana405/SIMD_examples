@@ -27,14 +27,14 @@ at time_scale=1 needs ≥120 steps/s at N=10 000, including merging and render.
 From a terminal in this folder (replace the timestamp with your build's):
 
 ```powershell
-.\gsim_app_20261018_072950.exe --help
+.\gsim_app_20261018_123611.exe --help
 ```
 
 **Windowed (interactive):**
 
 ```powershell
-.\gsim_app_20261018_072950.exe                # defaults: N=10000, seed 12345, tiled GPU kernel
-.\gsim_app_20261018_072950.exe --backend vulkan --adapter 0
+.\gsim_app_20261018_123611.exe                # defaults: N=10000, seed 12345, tiled GPU kernel
+.\gsim_app_20261018_123611.exe --backend vulkan --adapter 0
 ```
 
 Window controls (same as legacy):
@@ -55,9 +55,9 @@ help; plus a dropped-step counter (legacy silently dropped backlog after
 **Flags:**
 
 ```powershell
-.\gsim_app_20261018_072950.exe --bench                        # full 4-stage benchmark ladder
-.\gsim_app_20261018_072950.exe --headless --n 2000 --steps 60  # no window, physics only
-.\gsim_app_20261018_072950.exe --seed 777 --n 5000 --backend dx12 --adapter 1
+.\gsim_app_20261018_123611.exe --bench                        # full 4-stage benchmark ladder
+.\gsim_app_20261018_123611.exe --headless --n 2000 --steps 60  # no window, physics only
+.\gsim_app_20261018_123611.exe --seed 777 --n 5000 --backend dx12 --adapter 1
 ```
 
 `--help` lists everything: `--bench --headless --seed --n --backend
@@ -77,7 +77,7 @@ Useful overrides:
 
 ```powershell
 .\bench.ps1 -Backend vulkan -Adapter 0 -N 10000 -Steps 150
-.\bench.ps1 -Sweep "1000,5000,10000,20000,50000" -SweepSteps 60
+.\bench.ps1 -Sweep "1000,5000,10000,20000" -SweepSteps 60
 ```
 
 This writes **`telemetry/windows_<timestamp>.json`** next to the script.
@@ -108,7 +108,7 @@ Before trusting any number, run through these once:
    particles, trails, and the egui HUD (4 text areas, top-left). No validation
    errors, no crash on resize.
 2. **Tiled-mode bitwise parity re-verified.** Run
-   `.\gsim_app_20261018_072950.exe --bench` (or just `.\bench.ps1`, which
+   `.\gsim_app_20261018_123611.exe --bench` (or just `.\bench.ps1`, which
    picks the newest timestamped binary) and confirm the `parity` record reports
    `match: true` for **both** the naive and the tiled kernel (N=256, 20
    steps, serial merge). *Why this matters: on Mesa lavapipe (the software

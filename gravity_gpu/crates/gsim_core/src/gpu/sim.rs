@@ -57,6 +57,10 @@ pub struct Sim {
     pub(crate) accel_valid: wgpu::Buffer,
     pub(crate) alive_count: wgpu::Buffer,
     pub(crate) n_buf: wgpu::Buffer,
+    /// Per-body merge-component flag (binding 20): 1 if the body's root
+    /// absorbed another body this step; lets `reduce` skip the O(n) member
+    /// scan for singleton components.
+    pub(crate) merged_root: wgpu::Buffer,
     // Trails.
     pub(crate) trail_ring: wgpu::Buffer,
     pub(crate) trail_head: wgpu::Buffer,
@@ -91,6 +95,12 @@ pub struct Sim {
     pub(crate) trail_acc: f32,
     /// Physics steps executed.
     pub step_count: u64,
+    /// CPU-tracked acceleration cache validity (replaces the retired GPU
+    /// `accel_valid` flag protocol): true when `accel_a` holds accelerations
+    /// for the current positions, so the tiled `pass1` dispatch can be
+    /// skipped. Set false by spawn/upload (fresh state) and by
+    /// `--no-accel-cache` each step; set true after pass1/fused/force.
+    pub(crate) accel_valid_cpu: bool,
 }
 
 /// Bind-group entry borrowing a whole buffer.
@@ -174,6 +184,13 @@ impl Sim {
         let accel_valid = word_buf(device, &mut vram, "accel_valid");
         let alive_count = word_buf(device, &mut vram, "alive_count");
         let n_buf = word_buf(device, &mut vram, "n_buf");
+        let merged_root = storage_buf(
+            device,
+            &mut vram,
+            "merged_root",
+            bytes_f32(n),
+            wgpu::BufferUsages::empty(),
+        );
 
         let trail_ring = storage_buf(
             device,
@@ -238,6 +255,8 @@ impl Sim {
             },
             count: None,
         });
+        // Binding 20: merged_root flag array (storage, read_write).
+        entries.push(storage_rw(20));
         let bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("gsim compute layout"),
             entries: &entries,
@@ -266,6 +285,7 @@ impl Sim {
                 bg_entry(11, &accel_valid),
                 bg_entry(12, &alive_count),
                 bg_entry(13, &n_buf),
+                bg_entry(20, &merged_root),
                 bg_entry(14, &trail_ring),
                 bg_entry(15, &trail_head),
                 bg_entry(16, &stats_buf),
@@ -280,7 +300,11 @@ impl Sim {
         } else {
             cfg.workgroup_size
         };
-        let pipes = ComputePipelines::new(device, &compute_layout, wg_size);
+        // Uniform tile-loop bound for the tiled force kernels (see the
+        // NTILES_MAX override in force_tiled.wgsl): n only shrinks, so the
+        // startup capacity is a valid bound for the whole run.
+        let ntiles_max = (cfg.n_max as u32).div_ceil(wg_size);
+        let pipes = ComputePipelines::new(device, &compute_layout, wg_size, ntiles_max);
 
         // Camera uniforms for the render pipelines.
         let mut cam_buf = |label: &str| {
@@ -315,6 +339,7 @@ impl Sim {
             accel_valid,
             alive_count,
             n_buf,
+            merged_root,
             trail_ring,
             trail_head,
             stats_buf,
@@ -335,6 +360,7 @@ impl Sim {
             sim_time: 0.0,
             trail_acc: 0.0,
             step_count: 0,
+            accel_valid_cpu: false,
         };
         if let Some(format) = surface_format {
             sim.init_render(format);
@@ -355,8 +381,9 @@ impl Sim {
     /// Rebuild the tiled-force pipelines for a new workgroup size
     /// (autotune). Other pipelines are unaffected.
     pub fn set_workgroup_size(&mut self, wg: u32) {
+        let ntiles_max = (self.cfg.n_max as u32).div_ceil(wg);
         self.pipes
-            .set_workgroup_size(&self.ctx.device, &self.compute_layout, wg);
+            .set_workgroup_size(&self.ctx.device, &self.compute_layout, wg, ntiles_max);
         self.wg_size = wg;
     }
 

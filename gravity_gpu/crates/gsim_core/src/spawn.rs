@@ -170,6 +170,34 @@ impl Particles {
         }
         format!("{hash:016x}")
     }
+
+    /// Max per-body position error vs another cloud, order-independent
+    /// (both sides sorted by `(x.to_bits, y.to_bits)` before pairing).
+    /// Returns `None` when the body counts differ — a merge decision
+    /// flipped, which is itself a parity-relevant event.
+    pub fn max_position_error(&self, other: &Particles) -> Option<f32> {
+        if self.len() != other.len() {
+            return None;
+        }
+        let mut a: Vec<(u32, u32)> = (0..self.len())
+            .map(|i| (self.x[i].to_bits(), self.y[i].to_bits()))
+            .collect();
+        let mut b: Vec<(u32, u32)> = (0..other.len())
+            .map(|i| (other.x[i].to_bits(), other.y[i].to_bits()))
+            .collect();
+        a.sort_unstable();
+        b.sort_unstable();
+        let err = a
+            .iter()
+            .zip(b.iter())
+            .map(|((x1, y1), (x2, y2))| {
+                let dx = f32::from_bits(*x1) - f32::from_bits(*x2);
+                let dy = f32::from_bits(*y1) - f32::from_bits(*y2);
+                dx.abs().max(dy.abs())
+            })
+            .fold(0.0f32, f32::max);
+        Some(err)
+    }
 }
 
 /// Fraction of particles spawned clockwise (legacy normalizes the weights).

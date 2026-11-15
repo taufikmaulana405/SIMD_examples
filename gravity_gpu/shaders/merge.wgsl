@@ -30,6 +30,11 @@ fn compress(@builtin(global_invocation_id) gid: vec3<u32>) {
         pr = atomicLoad(&parent[r]);
     }
     atomicStore(&parent[i], r);
+    if (r != i) {
+        // Non-root member: its component is nontrivial. (Benign race:
+        // concurrent threads only ever write 1.)
+        atomicOr(&merged_root[r], 1u);
+    }
 }
 
 @compute @workgroup_size(256)
@@ -44,6 +49,18 @@ fn reduce(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     if (atomicLoad(&parent[i]) != i) {
         return; // not a component root
+    }
+    if (atomicLoad(&merged_root[i]) == 0u) {
+        // Singleton component: the center of mass is the body itself, so
+        // skip the O(n) member scan (this turns merge steps from O(n^2)
+        // into O(n)). Up to 1 ulp from the scan's `(m*x)/m` rounding —
+        // physically identical.
+        let slot = atomicAdd(&alive_count[0], 1u);
+        pos_b[slot] = pos_a[i];
+        vel_b[slot] = vel_a[i];
+        mass_b[slot] = mass_a[i];
+        bright_b[slot] = bright_a[i];
+        return;
     }
     // Ascending member scan: deterministic accumulation order.
     var m_sum = 0.0;

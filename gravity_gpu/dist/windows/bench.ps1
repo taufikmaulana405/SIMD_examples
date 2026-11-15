@@ -10,8 +10,9 @@
     x86_64-pc-windows-msvc); this script is complete and only needs the
     binary next to it (or at -Exe). Release binaries are timestamped
     (gsim_app_yyyyMMdd_HHmmss.exe) so browsers never serve a cached stale
-    copy; when -Exe is not given explicitly, the newest timestamped binary
-    in the script folder is picked automatically. Copy the resulting
+    copy; when -Exe is not given explicitly, a plain gsim_app.exe next to
+    the script wins, falling back to the newest timestamped binary only
+    when the plain one is absent. Copy the resulting
     telemetry/windows_<timestamp>.json back for ingestion into the project
     telemetry.
 .EXAMPLE
@@ -26,7 +27,7 @@ param(
     [ValidateSet("vulkan", "dx12")][string]$Backend = "dx12",
     [int]$Adapter = 0,
     [int]$Steps = 150,
-    [string]$Sweep = "1000,2000,5000,10000,20000,50000,100000,200000",
+    [string]$Sweep = "1000,2000,5000,10000,20000",
     [int]$SweepSteps = 60,
     [ValidateSet("naive", "tiled")][string]$Mode = "tiled",
     [ValidateSet("parallel", "serial")][string]$MergeMode = "parallel",
@@ -36,13 +37,20 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Release binaries are timestamped (gsim_app_yyyyMMdd_HHmmss.exe) so a fresh
-# download never collides with a browser-cached copy. Unless -Exe was given
-# explicitly, prefer the newest timestamped binary next to this script.
+# Binary selection: unless -Exe was given explicitly, prefer the plain
+# gsim_app.exe next to this script; only fall back to the newest
+# timestamped binary (gsim_app_yyyyMMdd_HHmmss.exe) when the plain one
+# is absent. Timestamped names exist so browsers never serve a cached
+# stale copy, but an explicitly placed gsim_app.exe always wins.
 if (-not $PSBoundParameters.ContainsKey('Exe')) {
-    $stamped = Get-ChildItem -Path $PSScriptRoot -Filter "gsim_app_*.exe" -File |
-        Sort-Object Name -Descending | Select-Object -First 1
-    if ($stamped) { $Exe = $stamped.FullName }
+    $plain = Join-Path $PSScriptRoot "gsim_app.exe"
+    if (Test-Path $plain) {
+        $Exe = $plain
+    } else {
+        $stamped = Get-ChildItem -Path $PSScriptRoot -Filter "gsim_app_*.exe" -File |
+            Sort-Object Name -Descending | Select-Object -First 1
+        if ($stamped) { $Exe = $stamped.FullName }
+    }
 }
 
 if (-not (Test-Path $Exe)) {
@@ -112,6 +120,13 @@ Write-Host ""
 Write-Host "== results =="
 Write-Host ("adapter : {0} [{1}/{2}] driver: {3}" -f $summary.adapter.name, $summary.adapter.type, $summary.adapter.backend, $summary.adapter.driver)
 Write-Host ("parity  : {0}" -f $summary.parity_ok)
+if ($null -ne $summary.parity) {
+    $par = $summary.parity
+    Write-Host ("parity cross-mode bitwise: {0}  cpu_max_err: {1} (tol {2})  counts_match: {3}" -f $par.cross_mode_bitwise_match, $par.cpu.max_position_error, $par.cpu.tolerance, $par.cpu.counts_match)
+    foreach ($m in $par.modes) {
+        Write-Host ("parity {0,-6}: deterministic={1}  hash={2}" -f $m.mode, $m.deterministic, $m.hash_run1)
+    }
+}
 foreach ($rung in $summary.rungs) {
     Write-Host ("rung {0,-6}: {1,10:N2} steps/s  (N={2}, steps={3}, final={4})" -f $rung.mode, $rung.steps_per_sec, $rung.n, $rung.steps, $rung.final_count)
 }

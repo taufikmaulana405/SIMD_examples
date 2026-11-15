@@ -466,8 +466,8 @@ fn bench_runner_smoke() {
     assert!(rung.steps_per_sec > 0.0);
     assert!(rung.final_count > 0 && rung.final_count <= 64);
     assert_eq!(rung.mode, "tiled");
-    let par = runner.parity_check(GpuMode::Naive, 32, 3);
-    assert_eq!(par["match"], true);
+    let par = runner.parity_check(32, 3);
+    assert_eq!(par["ok"], true);
     let pts = runner.sweep(&[32, 64], 2);
     assert_eq!(pts.len(), 2);
     assert!(pts[0].fps_at_1x > 0.0);

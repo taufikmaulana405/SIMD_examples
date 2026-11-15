@@ -28,8 +28,15 @@ pub(crate) struct ComputePipelines {
 }
 
 impl ComputePipelines {
-    /// Build every compute pipeline; `wg` sizes the tiled force kernels.
-    pub(crate) fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, wg: u32) -> Self {
+    /// Build every compute pipeline; `wg` sizes the tiled force kernels and
+    /// `ntiles_max` (= ceil(n_max / wg)) fixes their uniform tile-loop bound
+    /// (see the `NTILES_MAX` override in `force_tiled.wgsl`).
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        wg: u32,
+        ntiles_max: u32,
+    ) -> Self {
         let one = |name: &str, entry: &str| {
             let src = shaders::with_common(shaders::source(name));
             let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -47,9 +54,13 @@ impl ComputePipelines {
         };
         let tiled_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("force_tiled"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shaders::with_common(shaders::source(
-                "force_tiled",
-            )))),
+            // The tile loop is unrolled at runtime (see
+            // shaders::force_tiled_unrolled): FXC (SM 5.1, DX12) rejects
+            // barriers in loops containing nested loops (X4026), even when
+            // uniform and branchless. Unrolling eliminates the nesting.
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shaders::with_common(
+                &shaders::force_tiled_unrolled(ntiles_max, wg),
+            ))),
         });
         let tiled = |entry: &str| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -91,7 +102,16 @@ impl ComputePipelines {
         device: &wgpu::Device,
         layout: &wgpu::PipelineLayout,
         wg: u32,
+        ntiles_max: u32,
     ) {
+        // The tile loop is unrolled at runtime, so the module itself must be
+        // rebuilt for the new (wg, ntiles_max), not just the pipelines.
+        self.tiled_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("force_tiled"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shaders::with_common(
+                &shaders::force_tiled_unrolled(ntiles_max, wg),
+            ))),
+        });
         let tiled = |entry: &str| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(&format!("gsim tiled::{entry}")),

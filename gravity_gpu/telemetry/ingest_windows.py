@@ -64,7 +64,7 @@ def candidates() -> list[Path]:
 
 
 def parse_summary(p: Path) -> dict:
-    data = json.loads(p.read_text(encoding="utf-8"))
+    data = json.loads(p.read_text(encoding="utf-8-sig"))
     adapter = data.get("adapter") or {}
     for field in ("adapter", "parity_ok", "rungs", "sweep"):
         if field not in data:

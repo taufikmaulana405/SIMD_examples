@@ -15,6 +15,9 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     atomicStore(&parent[i], i);
+    // Clear the per-step merge-component flag (see binding 20); `compress`
+    // sets it for roots that absorb another body.
+    atomicStore(&merged_root[i], 0u);
     // v += a*dt/2 ; x += v*dt  (legacy kick+drift; exact op association
     // `(a*DT)*0.5` matches the scalar CPU reference bit-for-bit)
     let v = vel_a[i] + accel_a[i] * DT * 0.5;

@@ -24,6 +24,17 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// GPU-vs-CPU max position error tolerance (world units; the spawn disc is
+/// 3000 wide) for the parity physics-sanity check. Calibrated 2026-10-18:
+/// simulating the worst plausible hardware FP difference — FMA contraction
+/// of every mul+add in integrate/finish/merge — gives max 1.5e-5 after 20
+/// steps at N=256/seed 12345 with no merges. 0.01 is ~700x headroom for
+/// `sqrt` rounding and driver variance. This is the gross-sanity net (wrong
+/// sign, wrong dt, scrambled buffers show O(1)+); data races are caught by
+/// the determinism check and algorithmic force bugs by the cross-mode
+/// bitwise check instead.
+const PARITY_POS_TOLERANCE: f32 = 0.01;
+
 /// Result of one ladder rung.
 #[derive(Debug, Clone)]
 pub struct RungResult {
@@ -193,16 +204,81 @@ impl BenchmarkRunner {
         }
     }
 
-    /// Parity check: GPU (serial merge mode) vs the scalar CPU reference.
-    /// Both start from the identical seeded cloud; the hashes must match
-    /// bit-for-bit (same summation order, same op association).
-    pub fn parity_check(&self, mode: GpuMode, n: usize, steps: u64) -> Value {
+    /// Parity check, redesigned 2026-10-18 for real-hardware honesty.
+    ///
+    /// Bitwise GPU-vs-CPU parity over full steps is unachievable across FP
+    /// hardware: WGSL permits FMA contraction (`pos + v*DT` fusing to one
+    /// rounding) and implementation-defined `sqrt` precision, so x86 and
+    /// NVIDIA differ by 1 ulp somewhere within steps and chaos amplifies
+    /// it (RTX 3060, 2026-10-18: both GPU modes agreed bitwise with each
+    /// other yet differed from the CPU hash). The old check's premise —
+    /// "same summation order, same op association ⇒ same bits" — is false
+    /// across different FP implementations. Instead this asserts three
+    /// independently meaningful properties:
+    ///  1. cross-mode: naive/serial vs tiled/serial GPU hashes match
+    ///     bit-for-bit (same hardware, two independent force algorithms —
+    ///     a strong correctness signal for the tiled kernel);
+    ///  2. determinism: each mode run twice hashes identically (catches
+    ///     data races such as the 2026-10-18 pass1 `accel_valid` race);
+    ///  3. physics sanity: GPU (tiled) vs scalar CPU max position error
+    ///     after `steps` stays under [`PARITY_POS_TOLERANCE`] (P2-style;
+    ///     catches gross divergence, not last-ulp noise).
+    pub fn parity_check(&self, n: usize, steps: u64) -> Value {
+        let mut modes = Vec::new();
+        let mut hashes = Vec::new();
+        let mut deterministic_ok = true;
+        for mode in [GpuMode::Naive, GpuMode::Tiled] {
+            let h1 = self.parity_run(mode, n, steps);
+            let h2 = self.parity_run(mode, n, steps);
+            let det = h1 == h2;
+            deterministic_ok &= det;
+            hashes.push(h1.clone());
+            modes.push(json!({
+                "mode": format!("{mode:?}").to_lowercase(),
+                "merge": "serial",
+                "n": n,
+                "steps": steps,
+                "hash_run1": h1,
+                "hash_run2": h2,
+                "deterministic": det,
+            }));
+        }
+        let cross_mode_match = hashes[0] == hashes[1];
+
         let mut cpu = CpuSim::new(create_particles(self.seed, n));
         for _ in 0..steps {
             cpu.step(PHYSICS_DT);
         }
-        let cpu_hash = cpu.particles.positions_hash();
+        let gpu_particles = self.parity_particles(GpuMode::Tiled, n, steps);
+        let counts_match = cpu.particles.len() == gpu_particles.len();
+        let max_err = cpu.particles.max_position_error(&gpu_particles);
+        let tolerance_ok = counts_match && max_err.is_some_and(|e| e <= PARITY_POS_TOLERANCE);
 
+        let ok = deterministic_ok && cross_mode_match && tolerance_ok;
+        json!({
+            "n": n,
+            "steps": steps,
+            "modes": modes,
+            "cross_mode_bitwise_match": cross_mode_match,
+            "cpu": {
+                "counts_match": counts_match,
+                "cpu_count": cpu.particles.len(),
+                "gpu_count": gpu_particles.len(),
+                "max_position_error": max_err,
+                "tolerance": PARITY_POS_TOLERANCE,
+                "tolerance_ok": tolerance_ok,
+            },
+            "ok": ok,
+        })
+    }
+
+    /// One GPU serial-merge run; returns the positions hash.
+    fn parity_run(&self, mode: GpuMode, n: usize, steps: u64) -> String {
+        self.parity_particles(mode, n, steps).positions_hash()
+    }
+
+    /// One GPU serial-merge run; returns the read-back particle cloud.
+    fn parity_particles(&self, mode: GpuMode, n: usize, steps: u64) -> crate::spawn::Particles {
         let mut cfg = self.sim_config(mode, MergeMode::Serial, n, SPAWN_RADIUS);
         cfg.workgroup_size = 128;
         let mut sim =
@@ -211,17 +287,7 @@ impl BenchmarkRunner {
         for _ in 0..steps {
             sim.step();
         }
-        let gpu = sim.readback_particles();
-        let gpu_hash = gpu.positions_hash();
-        json!({
-            "mode": format!("{mode:?}").to_lowercase(),
-            "merge": "serial",
-            "n": n,
-            "steps": steps,
-            "cpu_hash": cpu_hash,
-            "gpu_hash": gpu_hash,
-            "match": cpu_hash == gpu_hash,
-        })
+        sim.readback_particles()
     }
 
     /// N-scaling sweep: for each N, spawn with `sqrt(N)`-scaled radius, run a
