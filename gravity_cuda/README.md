@@ -18,10 +18,10 @@ cd gravity_cuda
 cargo run --release
 ```
 
-Set `CUDA_HOME` or `CUDA_PATH` when `nvcc` is not on `PATH`. The PTX target defaults to `compute_52`; override it for a known device:
+Set `CUDA_HOME` or `CUDA_PATH` when `nvcc` is not on `PATH`. The PTX target defaults to `compute_53`; override it for a [known device](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/):
 
 ```bash
-CUDA_ARCH=compute_86 cargo run --release
+CUDA_ARCH=compute_83 cargo run --release
 ```
 
 The prototype uses synchronized host readback for both rendering and deterministic collision resolution. Physics integration and the final velocity-Verlet kick execute in CUDA; after the drift phase, Rust copies the active prefix to the host, applies the ordered AVX2-compatible merge/compaction routine, uploads the compacted prefix, and then launches the final CUDA kick. This correctness-first boundary is intentionally slower and can be replaced by a GPU-native collision pipeline after parity tests pass. CUDA/OpenGL interop can remove the rendering readback in a later optimization pass.
@@ -127,7 +127,6 @@ export CUDA_ARCH=compute_86
 
 cargo clean --manifest-path gravity_cuda/Cargo.toml
 cargo build \
-  --manifest-path gravity_cuda/Cargo.toml \
   --release \
   --target x86_64-pc-windows-gnu
 ```
@@ -151,7 +150,7 @@ For a custom DLL, the path is optional; omitting `CUDA_DLL` uses `gravity_cuda/n
 ```bash
 unset CUDA_IMPORT_LIB
 unset CUDA_WINDOWS_LIB_DIR
-cargo build --manifest-path gravity_cuda/Cargo.toml --release --target x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu
 ```
 
 Expected output:

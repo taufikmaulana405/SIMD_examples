@@ -174,10 +174,6 @@ cargo run --release
 
 CUDA Toolkit (`nvcc`), a compatible NVIDIA driver, and a visible NVIDIA GPU are required at runtime. Set `CUDA_HOME`/`CUDA_PATH` when `nvcc` is not on `PATH`; set `CUDA_ARCH` to choose a PTX virtual architecture, for example `CUDA_ARCH=compute_86`. To cross-compile a Windows `.exe` from Linux/WSL, use target `x86_64-pc-windows-gnu`. The build automatically uses `gravity_cuda/nvcuda.dll` by default, or a custom path supplied through `CUDA_DLL`, and generates its temporary GNU import library. See [`gravity_cuda/README.md`](gravity_cuda/README.md) for the exact command and limitations.
 
----
-
----
-
 ## Checking CPU Support
 
 ### Linux
@@ -196,7 +192,7 @@ grep -o -E 'avx2|avx512[^ ]*' /proc/cpuinfo | sort -u
 
 ### Windows
 
-You can use tools such as CPU-Z or HWiNFO to check which instruction-set extensions your CPU supports.
+You can use tools such as [CPU-Z](https://www.cpuid.com/softwares/cpu-z.html) or [HWiNFO](https://www.hwinfo.com/) to check which instruction-set extensions your CPU supports.
 
 ## Notes
 

@@ -1,0 +1,77 @@
+name: Build gravity_cuda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gravity_cuda/**'
+      - '.github/workflows/cuda-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'gravity_cuda/**'
+      - '.github/workflows/cuda-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows x64 binary
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Set up MSVC tools for nvcc
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.24
+        with:
+          cuda: '12.6.3'
+          sub-packages: '["nvcc", "cudart"]'
+
+      - name: Configure CUDA library path
+        shell: pwsh
+        run: |
+          $cudaLibraryPath = Join-Path $env:CUDA_PATH 'lib/x64'
+          if (!(Test-Path (Join-Path $cudaLibraryPath 'cuda.lib'))) {
+            throw "CUDA Driver API import library was not found in $cudaLibraryPath"
+          }
+          "CUDA_LIBRARY_PATH=$cudaLibraryPath" >> $env:GITHUB_ENV
+          nvcc --version
+
+      - name: Cache Cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gravity_cuda/target
+          key: ${{ runner.os }}-cargo-cuda-msvc-12.6.3-compute53-${{ hashFiles('gravity_cuda/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-cuda-msvc-12.6.3-compute53-
+
+      - name: Build gravity_cuda
+        working-directory: gravity_cuda
+        env:
+          CUDA_ARCH: compute_53
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: gravity-cuda-windows-x64
+          path: gravity_cuda/target/x86_64-pc-windows-msvc/release/gravity_cuda.exe
+          if-no-files-found: error
+          archive: false
