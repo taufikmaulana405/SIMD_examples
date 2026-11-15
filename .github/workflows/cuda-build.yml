@@ -31,7 +31,7 @@ jobs:
           # Latest Windows CUDA version supported by cuda-toolkit v0.2.36.
           # Update this pin when the installer action adds newer releases.
           - os: windows-latest
-            cuda: '13.4.3'
+            cuda: '13.3.1'
             cuda-arch: compute_83
             # CUDA 13 ships compiler components as separate subpackages.
             cuda-packages: '["nvcc", "cudart", "crt", "nvvm", "nvptxcompiler"]'
@@ -45,10 +45,10 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      # - name: Set up MSVC tools for nvcc
-      #   uses: TheMrMilchmann/setup-msvc-dev@v4
-      #   with:
-      #     arch: x64
+      - name: Set up MSVC tools for nvcc
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
 
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.36
@@ -57,28 +57,16 @@ jobs:
           sub-packages: ${{ matrix.cuda-packages }}
           log-file-suffix: ${{ matrix.os }}-cuda-${{ matrix.cuda }}.txt
 
-      - name: Configure CUDA library path
-        shell: pwsh
-        run: |
-          $cudaHostConfig = Join-Path $env:CUDA_PATH 'include/crt/host_config.h'
-          if (!(Test-Path $cudaHostConfig)) {
-            throw "CUDA compiler header was not found at $cudaHostConfig. Check the installed CUDA compiler subpackages."
-          }
-          $cudaLibraryPath = Join-Path $env:CUDA_PATH 'lib/x64'
-          if (!(Test-Path (Join-Path $cudaLibraryPath 'cuda.lib'))) {
-            throw "CUDA Driver API import library was not found in $cudaLibraryPath"
-          }
-          "CUDA_LIBRARY_PATH=$cudaLibraryPath" >> $env:GITHUB_ENV
-          nvcc --version
-
       - name: Cache Cargo
         # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false
         if: vars.ENABLE_BUILD_CACHE != 'false'
         uses: actions/cache@v6
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
             gravity_cuda/target
           key: ${{ matrix.os }}-cargo-cuda-msvc-${{ matrix.cuda }}-${{ matrix.cuda-arch }}-${{ hashFiles('gravity_cuda/Cargo.lock') }}
           restore-keys: |
