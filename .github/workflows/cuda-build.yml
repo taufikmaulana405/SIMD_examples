@@ -31,7 +31,7 @@ jobs:
           # Latest Windows CUDA version supported by cuda-toolkit v0.2.36.
           # Update this pin when the installer action adds newer releases.
           - os: windows-latest
-            cuda: '13.5.0'
+            cuda: '13.4.3'
             cuda-arch: compute_83
             # CUDA 13 ships compiler components as separate subpackages.
             cuda-packages: '["nvcc", "cudart", "crt", "nvvm", "nvptxcompiler"]'
@@ -45,10 +45,10 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Set up MSVC tools for nvcc
-        uses: TheMrMilchmann/setup-msvc-dev@v4
-        with:
-          arch: x64
+      # - name: Set up MSVC tools for nvcc
+      #   uses: TheMrMilchmann/setup-msvc-dev@v4
+      #   with:
+      #     arch: x64
 
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.36
