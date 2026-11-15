@@ -15,6 +15,7 @@ mod hud;
 mod windowed;
 
 use gsim_core::cli::CliConfig;
+use gsim_core::{log_debug, log_info};
 
 fn main() {
     let cfg = CliConfig::parse();
@@ -22,6 +23,11 @@ fn main() {
         print!("{}", CliConfig::help_text());
         return;
     }
+    // Logging first: everything below honors --log-level (default info).
+    // Human-readable lines go to stderr; stdout stays clean for JSON.
+    gsim_core::log::set_max_level(cfg.log_level);
+    log_debug!("log level: {}", cfg.log_level);
+    log_info!("gsim_app starting (seed={}, n={})", cfg.seed, cfg.n);
     if cfg.bench {
         bench_cmd::run(&cfg);
     } else if cfg.headless {

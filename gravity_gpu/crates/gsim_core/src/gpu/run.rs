@@ -77,6 +77,7 @@ impl Sim {
         pipeline: &wgpu::ComputePipeline,
         x: u32,
     ) {
+        crate::log_trace!("dispatch {label}: {x} workgroups");
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(label),
             timestamp_writes: None,

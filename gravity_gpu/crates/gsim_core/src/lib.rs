@@ -7,6 +7,7 @@
 //! - [`spawn`]: seeded initial particle cloud (bit-identical to legacy)
 //! - [`cpu`]: scalar CPU reference step (parity oracle for Stage 3)
 //! - [`cli`]: `--bench/--headless/--seed/...` argument parsing
+//! - [`log`]: leveled logging (ERROR/WARN/INFO/DEBUG/TRACE, default INFO)
 //! - [`telemetry`]: JSONL telemetry writer (stage 2 schema)
 //! - [`stats`]: the tiny per-frame stats struct
 //! - [`gpu`]: wgpu compute driver — buffers, WGSL pipelines, stepping,
@@ -23,6 +24,7 @@ pub mod cli;
 pub mod constants;
 pub mod cpu;
 pub mod gpu;
+pub mod log;
 pub mod rng;
 pub mod spawn;
 pub mod stats;

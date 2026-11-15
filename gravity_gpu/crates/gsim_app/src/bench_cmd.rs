@@ -11,6 +11,7 @@ use gsim_core::cli::{CliConfig, GpuMode, MergeMode};
 use gsim_core::constants::SPAWN_RADIUS;
 use gsim_core::gpu::bench::BenchmarkRunner;
 use gsim_core::telemetry::default_path;
+use gsim_core::{log_debug, log_error, log_info, log_warn};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
@@ -37,12 +38,26 @@ pub fn run(cfg: &CliConfig) {
         .clone()
         .map(PathBuf::from)
         .unwrap_or_else(default_path);
-    let runner = BenchmarkRunner::new(cfg.backend, cfg.adapter, cfg.seed, tele)
-        .expect("open benchmark adapter");
+    let runner = match BenchmarkRunner::new(cfg.backend, cfg.adapter, cfg.seed, tele) {
+        Ok(r) => r,
+        Err(e) => {
+            log_error!("cannot open benchmark adapter: {e}");
+            std::process::exit(1);
+        }
+    };
     let info = &runner.adapter_info;
-    println!(
+    log_info!(
         "adapter: {} ({}, {})",
-        info.name, info.device_type, info.backend
+        info.name,
+        info.device_type,
+        info.backend
+    );
+    if info.device_type == "cpu" {
+        log_warn!("software adapter in use: timings are smoke-only, NOT GPU performance");
+    }
+    log_debug!(
+        "telemetry: {}",
+        cfg.telemetry.as_deref().unwrap_or("default")
     );
 
     runner.log(
@@ -78,7 +93,8 @@ pub fn run(cfg: &CliConfig) {
 
     // Autotune the tiled workgroup size on the running adapter (at rung N).
     let (best_wg, table) = runner.autotune(cfg.n);
-    println!("autotune: best workgroup size = {best_wg} {table:?}");
+    log_info!("autotune: best workgroup size = {best_wg}");
+    log_debug!("autotune table: {table:?}");
 
     // Parity, redesigned 2026-10-18 for real-hardware honesty: GPU
     // naive-vs-tiled bitwise match, per-mode determinism across two runs,
@@ -87,7 +103,7 @@ pub fn run(cfg: &CliConfig) {
     // unachievable across FP hardware (FMA contraction, sqrt precision).
     let parity = runner.parity_check(PARITY_N, PARITY_STEPS);
     let parity_ok = parity["ok"].as_bool().unwrap_or(false);
-    println!(
+    log_info!(
         "parity: ok={parity_ok} cross_mode_bitwise={} det=[naive:{}, tiled:{}] cpu_max_err={} (tol {}) counts_match={}",
         parity["cross_mode_bitwise_match"],
         parity["modes"][0]["deterministic"],
@@ -96,6 +112,11 @@ pub fn run(cfg: &CliConfig) {
         parity["cpu"]["tolerance"],
         parity["cpu"]["counts_match"],
     );
+    if !parity_ok {
+        log_warn!("parity check FAILED: {parity}");
+    } else {
+        log_debug!("parity detail: {parity}");
+    }
     runner.log("parity", parity.clone());
 
     // Rungs (2) and (3): naive and tiled ladder rungs at --n/--steps.
@@ -109,12 +130,16 @@ pub fn run(cfg: &CliConfig) {
             SPAWN_RADIUS,
             wg,
         );
-        println!(
+        log_info!(
             "rung {:?}: {:.2} steps/s ({} steps, final count {}), timestamps={}",
-            mode, r.steps_per_sec, r.steps, r.final_count, r.gpu_timestamps
+            mode,
+            r.steps_per_sec,
+            r.steps,
+            r.final_count,
+            r.gpu_timestamps
         );
         for (name, ns) in &r.per_pass_ns {
-            println!("    pass {name}: {:.1} ns", ns);
+            log_debug!("    pass {name}: {ns:.1} ns");
         }
         rungs.push(json!({
             "mode": r.mode, "n": r.n, "steps": r.steps,
@@ -160,9 +185,17 @@ pub fn run(cfg: &CliConfig) {
         .filter(|s| s.fps_at_4x >= 60.0)
         .map(|s| s.n)
         .max();
-    println!(
+    log_info!(
         "sweep ok: {} points; max N @60fps: 1x={max_n_1x:?} 4x={max_n_4x:?}",
         sweep_json.len()
+    );
+    log_debug!(
+        "sweep points: {}",
+        sweep_json
+            .iter()
+            .map(|s| format!("n={} {:.1}/s", s["n"], s["steps_per_sec"]))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     runner.log(

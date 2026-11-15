@@ -3,6 +3,7 @@
 //! unknown flags or missing values.
 
 use gsim_core::cli::{Backend, CliConfig, GpuMode, MergeMode};
+use gsim_core::log::LogLevel;
 use std::str::FromStr;
 
 #[test]
@@ -18,6 +19,7 @@ fn defaults_match_stage1_harness() {
     assert!(matches!(cfg.merge_mode, MergeMode::Parallel));
     assert!(!cfg.no_accel_cache);
     assert_eq!(cfg.sweep_steps, 4);
+    assert!(matches!(cfg.log_level, LogLevel::Info));
     assert!(cfg.dump.is_none() && cfg.telemetry.is_none() && cfg.sweep.is_none());
 }
 
@@ -50,6 +52,8 @@ fn every_flag_parses() {
         "100,200",
         "--sweep-steps",
         "9",
+        "--log-level",
+        "debug",
     ]);
     assert!(cfg.bench && cfg.headless && cfg.no_accel_cache);
     assert_eq!(cfg.seed, 7);
@@ -62,6 +66,28 @@ fn every_flag_parses() {
     assert_eq!(cfg.telemetry.as_deref(), Some("/tmp/t.jsonl"));
     assert_eq!(cfg.sweep.as_deref(), Some("100,200"));
     assert_eq!(cfg.sweep_steps, 9);
+    assert!(matches!(cfg.log_level, LogLevel::Debug));
+}
+
+#[test]
+fn log_level_flag_parses_all_levels() {
+    for (text, level) in [
+        ("error", LogLevel::Error),
+        ("warn", LogLevel::Warn),
+        ("warning", LogLevel::Warn),
+        ("info", LogLevel::Info),
+        ("debug", LogLevel::Debug),
+        ("TRACE", LogLevel::Trace),
+    ] {
+        let cfg = CliConfig::parse_from(["gsim", "--log-level", text]);
+        assert_eq!(cfg.log_level, level, "level '{text}'");
+    }
+}
+
+#[test]
+#[should_panic(expected = "--log-level")]
+fn log_level_rejects_unknown() {
+    let _ = CliConfig::parse_from(["gsim", "--log-level", "verbose"]);
 }
 
 #[test]
@@ -122,6 +148,7 @@ fn help_text_covers_every_flag() {
         "--telemetry",
         "--sweep",
         "--sweep-steps",
+        "--log-level",
     ] {
         assert!(help.contains(flag), "help text missing {flag}");
     }

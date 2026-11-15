@@ -362,6 +362,12 @@ impl Sim {
             step_count: 0,
             accel_valid_cpu: false,
         };
+        crate::log_debug!(
+            "sim created: n_max={} vram={:.1} MiB workgroup={}",
+            sim.cfg.n_max,
+            sim.vram_bytes as f64 / 1048576.0,
+            sim.wg_size
+        );
         if let Some(format) = surface_format {
             sim.init_render(format);
         }

@@ -5,6 +5,7 @@
 use gsim_core::cli::CliConfig;
 use gsim_core::constants::SPAWN_RADIUS;
 use gsim_core::gpu::{Sim, SimConfig};
+use gsim_core::{log_error, log_info};
 use serde_json::json;
 use std::time::Instant;
 
@@ -18,7 +19,13 @@ pub fn run(cfg: &CliConfig) {
         spawn_radius: SPAWN_RADIUS,
         workgroup_size: 128,
     };
-    let mut sim = Sim::new(cfg.backend, cfg.adapter, sim_cfg, None).expect("open adapter");
+    let mut sim = match Sim::new(cfg.backend, cfg.adapter, sim_cfg, None) {
+        Ok(s) => s,
+        Err(e) => {
+            log_error!("cannot open adapter: {e}");
+            std::process::exit(1);
+        }
+    };
     sim.spawn();
 
     let wall = Instant::now();
@@ -58,6 +65,12 @@ pub fn run(cfg: &CliConfig) {
         "gpu_timestamps": sim.timer.gpu_timestamps,
     });
     let text = serde_json::to_string_pretty(&summary).expect("json");
+    log_info!(
+        "headless done: {:.2} steps/s ({} steps, final count {})",
+        cfg.steps as f64 / wall_s.max(1e-9),
+        cfg.steps,
+        stats.count
+    );
     match &cfg.dump {
         Some(path) => std::fs::write(path, &text).expect("dump write"),
         None => println!("{text}"),

@@ -7,6 +7,7 @@
 //! before any other parsing so it always prints and never panics.
 
 use crate::constants::DEFAULT_SEED;
+use crate::log::LogLevel;
 use std::str::FromStr;
 
 /// Which wgpu backend to request.
@@ -112,6 +113,8 @@ pub struct CliConfig {
     pub sweep: Option<String>,
     /// Physics steps per sweep point (default 4).
     pub sweep_steps: u64,
+    /// Log verbosity: error | warn | info | debug | trace (default info).
+    pub log_level: LogLevel,
 }
 
 impl Default for CliConfig {
@@ -132,6 +135,7 @@ impl Default for CliConfig {
             telemetry: None,
             sweep: None,
             sweep_steps: 4,
+            log_level: LogLevel::Info,
         }
     }
 }
@@ -218,6 +222,15 @@ impl CliConfig {
                     i += 1;
                     cfg.sweep_steps = value(&argv, i, "--sweep-steps");
                 }
+                "--log-level" => {
+                    i += 1;
+                    let s: String = value(&argv, i, "--log-level");
+                    cfg.log_level = LogLevel::parse(&s).unwrap_or_else(|| {
+                        panic!(
+                            "--log-level: unknown level '{s}' (want error|warn|info|debug|trace)"
+                        )
+                    });
+                }
                 other => panic!("unknown argument: {other}"),
             }
             i += 1;
@@ -232,6 +245,7 @@ impl CliConfig {
     /// let help = CliConfig::help_text();
     /// assert!(help.contains("--bench"));
     /// assert!(help.contains("--sweep-steps"));
+    /// assert!(help.contains("--log-level"));
     /// assert!(help.contains("EXAMPLES"));
     /// ```
     pub fn help_text() -> &'static str {
@@ -264,6 +278,8 @@ FLAGS:
     --telemetry <path>    Telemetry JSONL path (default: telemetry/stage2.jsonl)
     --sweep <csv>         Rung-4 N-sweep list, e.g. 1000,5000,10000 (bench mode)
     --sweep-steps <u64>   Physics steps per sweep point (default: 4)
+    --log-level <name>    error | warn | info | debug | trace (default: info)
+                          Logs go to stderr; stdout stays clean for JSON output
 
 INTERACTIVE CONTROLS:
     Space         pause / resume
