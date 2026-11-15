@@ -32,7 +32,7 @@ jobs:
           # Update this pin when the installer action adds newer releases.
           - os: windows-latest
             cuda: '13.3.1'
-            cuda-arch: compute_83
+            cuda-arch: compute_80
             # CUDA 13 ships compiler components as separate subpackages.
             cuda-packages: '["nvcc", "cudart", "crt", "nvvm", "nvptxcompiler"]'
 
