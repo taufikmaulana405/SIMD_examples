@@ -25,14 +25,14 @@ jobs:
       matrix:
         include:
           - os: windows-2022
-            cuda: '12.6.3'
+            cuda: '12.9.0'
             cuda-arch: compute_53
             cuda-packages: '["nvcc", "cudart"]'
           # Latest Windows CUDA version supported by cuda-toolkit v0.2.36.
           # Update this pin when the installer action adds newer releases.
           - os: windows-latest
-            cuda: '13.3.1'
-            cuda-arch: compute_75
+            cuda: '13.5.0'
+            cuda-arch: compute_83
             # CUDA 13 ships compiler components as separate subpackages.
             cuda-packages: '["nvcc", "cudart", "crt", "nvvm", "nvptxcompiler"]'
 
@@ -46,7 +46,7 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Set up MSVC tools for nvcc
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
 
