@@ -31,6 +31,8 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Cache Cargo
+        # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false
+        if: vars.ENABLE_BUILD_CACHE != 'false'
         uses: actions/cache@v6
         with:
           path: |

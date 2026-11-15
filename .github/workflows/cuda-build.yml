@@ -38,7 +38,7 @@ jobs:
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
-          cuda: '12.6.3'
+          # cuda: '12.6.3'
           sub-packages: '["nvcc", "cudart"]'
 
       - name: Configure CUDA library path
@@ -52,6 +52,8 @@ jobs:
           nvcc --version
 
       - name: Cache Cargo
+        # Enabled by default; can be disabled via repository variable ENABLE_BUILD_CACHE=false
+        if: vars.ENABLE_BUILD_CACHE != 'false'
         uses: actions/cache@v6
         with:
           path: |
