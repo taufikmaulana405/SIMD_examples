@@ -27,11 +27,14 @@ jobs:
           - os: windows-2022
             cuda: '12.6.3'
             cuda-arch: compute_53
+            cuda-packages: '["nvcc", "cudart"]'
           # Latest Windows CUDA version supported by cuda-toolkit v0.2.36.
           # Update this pin when the installer action adds newer releases.
           - os: windows-latest
             cuda: '13.3.1'
             cuda-arch: compute_75
+            # CUDA 13 ships compiler components as separate subpackages.
+            cuda-packages: '["nvcc", "cudart", "crt", "nvvm", "nvptxcompiler"]'
 
     steps:
       - name: Checkout repository
@@ -51,12 +54,16 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.36
         with:
           cuda: ${{ matrix.cuda }}
-          sub-packages: '["nvcc", "cudart"]'
+          sub-packages: ${{ matrix.cuda-packages }}
           log-file-suffix: ${{ matrix.os }}-cuda-${{ matrix.cuda }}.txt
 
       - name: Configure CUDA library path
         shell: pwsh
         run: |
+          $cudaHostConfig = Join-Path $env:CUDA_PATH 'include/crt/host_config.h'
+          if (!(Test-Path $cudaHostConfig)) {
+            throw "CUDA compiler header was not found at $cudaHostConfig. Check the installed CUDA compiler subpackages."
+          }
           $cudaLibraryPath = Join-Path $env:CUDA_PATH 'lib/x64'
           if (!(Test-Path (Join-Path $cudaLibraryPath 'cuda.lib'))) {
             throw "CUDA Driver API import library was not found in $cudaLibraryPath"
