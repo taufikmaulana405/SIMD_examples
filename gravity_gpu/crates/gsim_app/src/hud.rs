@@ -9,7 +9,19 @@ use crate::windowed::Gfx;
 use gsim_core::constants::{CLOCKWISE_ROTATION_WEIGHT, COUNTERCLOCKWISE_ROTATION_WEIGHT};
 
 impl Gfx {
-    pub(crate) fn egui_frame(&mut self, view: &wgpu::TextureView, w: u32, h: u32) {
+    /// `w_px`/`h_px` are physical pixels (for the wgpu screen descriptor);
+    /// `w_pts`/`h_pts` are egui points (for HUD layout). They differ on
+    /// scaled displays (`pixels_per_point > 1`): using pixels for layout
+    /// pushes the bottom-anchored lines off-screen, where egui's area
+    /// constraining clamps them onto each other.
+    pub(crate) fn egui_frame(
+        &mut self,
+        view: &wgpu::TextureView,
+        w_px: u32,
+        h_px: u32,
+        _w_pts: f32,
+        h_pts: f32,
+    ) {
         let raw_input = self.egui_state.take_egui_input(&self.window);
         let s = &self.stats;
         let cw_pct = CLOCKWISE_ROTATION_WEIGHT
@@ -51,7 +63,7 @@ impl Gfx {
             hud_line(
                 ctx,
                 "hud_l3",
-                [20.0, h as f32 - 28.0],
+                [20.0, h_pts - 28.0],
                 l3,
                 13.0,
                 [153, 173, 204],
@@ -59,7 +71,7 @@ impl Gfx {
             hud_line(
                 ctx,
                 "hud_l4",
-                [20.0, h as f32 - 50.0],
+                [20.0, h_pts - 50.0],
                 &l4,
                 13.0,
                 [140, 150, 170],
@@ -83,7 +95,7 @@ impl Gfx {
             }
         }
         let screen_desc = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [w, h],
+            size_in_pixels: [w_px, h_px],
             pixels_per_point: full_output.pixels_per_point,
         };
         let mut encoder =
@@ -137,10 +149,18 @@ fn hud_line(ctx: &egui::Context, id: &str, pos: [f32; 2], text: &str, size: f32,
         .movable(false)
         .interactable(false)
         .show(ctx, |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(size)
-                    .color(egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])),
+            // Extend (never wrap): these are single-line status readouts, as
+            // in the legacy app. The default Wrap mode can wrap mid-string
+            // (the wrap width derives from the area's own measured width, so
+            // once wrapped it stays wrapped) and the second line then
+            // collides with the HUD line below.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(text)
+                        .size(size)
+                        .color(egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2])),
+                )
+                .wrap_mode(egui::TextWrapMode::Extend),
             );
         });
 }

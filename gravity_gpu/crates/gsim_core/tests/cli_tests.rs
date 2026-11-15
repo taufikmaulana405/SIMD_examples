@@ -8,6 +8,7 @@ use std::str::FromStr;
 #[test]
 fn defaults_match_stage1_harness() {
     let cfg = CliConfig::parse_from(["gsim"]);
+    assert!(!cfg.help);
     assert!(!cfg.bench && !cfg.headless);
     assert_eq!(cfg.seed, 12345);
     assert_eq!(cfg.n, 10_000);
@@ -85,6 +86,49 @@ fn from_str_variants() {
     assert!(matches!(Backend::default(), Backend::Vulkan));
     assert!(matches!(GpuMode::default(), GpuMode::Tiled));
     assert!(matches!(MergeMode::default(), MergeMode::Parallel));
+}
+
+#[test]
+fn help_flag_short_circuits() {
+    // Long and short forms both set `help` …
+    assert!(CliConfig::parse_from(["gsim", "--help"]).help);
+    assert!(CliConfig::parse_from(["gsim", "-h"]).help);
+    // … anywhere in the argv …
+    assert!(CliConfig::parse_from(["gsim", "--n", "512", "-h"]).help);
+    // … and never panic on neighbouring typos or bad values.
+    assert!(CliConfig::parse_from(["gsim", "--help", "--seed", "xyz"]).help);
+    assert!(CliConfig::parse_from(["gsim", "--frobnicate", "-h"]).help);
+    // Without it, `help` stays false.
+    assert!(!CliConfig::parse_from(["gsim", "--bench"]).help);
+}
+
+#[test]
+fn help_text_covers_every_flag() {
+    let help = CliConfig::help_text();
+    for flag in [
+        "-h",
+        "--help",
+        "--bench",
+        "--headless",
+        "--seed",
+        "--n",
+        "--backend",
+        "--adapter",
+        "--steps",
+        "--dump",
+        "--mode",
+        "--merge-mode",
+        "--no-accel-cache",
+        "--telemetry",
+        "--sweep",
+        "--sweep-steps",
+    ] {
+        assert!(help.contains(flag), "help text missing {flag}");
+    }
+    assert!(help.contains("USAGE"));
+    assert!(help.contains("EXAMPLES"));
+    assert!(help.contains("default: 12345"));
+    assert!(help.contains("default: 10000"));
 }
 
 #[test]

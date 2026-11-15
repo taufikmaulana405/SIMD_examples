@@ -65,10 +65,14 @@ impl App {
     fn init_gfx(&mut self, window: Arc<Window>) {
         let cfg = &self.cfg;
         let ctx = GpuContext::open(cfg.backend, cfg.adapter).expect("open adapter");
-        let target = wgpu::SurfaceTarget::Window(Box::new(window.clone()));
+        // NOTE: must be DisplayAndWindow, not Window: wgpu 30's
+        // `SurfaceTarget::Window` requires the display handle to have been
+        // passed via `InstanceDescriptor::display` (ours is None), otherwise
+        // surface creation fails with `MissingDisplayHandle` on every
+        // platform. Supplying the window itself provides both handles.
         let surface = ctx
             .instance()
-            .create_surface(target)
+            .create_surface(window.clone())
             .expect("create surface");
         let caps = surface.get_capabilities(ctx.adapter());
         let surface_format = caps
@@ -269,6 +273,8 @@ impl Gfx {
 
         let size = self.window.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
+        // egui layout works in points; physical pixels differ on scaled displays.
+        let scale = self.window.scale_factor() as f32;
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(o)
             | wgpu::CurrentSurfaceTexture::Suboptimal(o) => o,
@@ -297,7 +303,7 @@ impl Gfx {
             trail_instances: self.stats.trail_points,
         });
 
-        self.egui_frame(&view, w, h);
+        self.egui_frame(&view, w, h, w as f32 / scale, h as f32 / scale);
         self.sim.ctx.queue.present(output);
     }
 

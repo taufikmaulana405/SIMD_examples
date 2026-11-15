@@ -1,9 +1,10 @@
-//! CLI configuration: `--bench/--headless/--seed/--n/--backend/--adapter/--steps/--dump`
+//! CLI configuration: `-h/--help`, `--bench/--headless/--seed/--n/--backend/--adapter/--steps/--dump`
 //! plus GPU-port extras (`--mode`, `--merge-mode`, `--no-accel-cache`).
 //!
 //! Parsing is deliberately hand-rolled (like the stage-1 harness): unknown
 //! flags panic so typos fail loudly instead of silently benchmarking the
-//! wrong thing.
+//! wrong thing. `--help`/`-h` short-circuits everything: it is detected
+//! before any other parsing so it always prints and never panics.
 
 use crate::constants::DEFAULT_SEED;
 use std::str::FromStr;
@@ -80,6 +81,8 @@ impl FromStr for MergeMode {
 /// Parsed command line for `gsim_app`.
 #[derive(Debug, Clone)]
 pub struct CliConfig {
+    /// Print the help text and exit (`-h`/`--help`).
+    pub help: bool,
     /// Run the benchmark ladder + N-sweep headlessly and exit.
     pub bench: bool,
     /// No window at all (still runs the sim loop for `--steps`).
@@ -114,6 +117,7 @@ pub struct CliConfig {
 impl Default for CliConfig {
     fn default() -> Self {
         Self {
+            help: false,
             bench: false,
             headless: false,
             seed: DEFAULT_SEED,
@@ -134,6 +138,8 @@ impl Default for CliConfig {
 
 impl CliConfig {
     /// Parse `std::env::args()`. Panics on unknown flags or bad values.
+    /// `-h`/`--help` short-circuits: returns a default config with
+    /// [`Self::help`] set, without validating anything else.
     ///
     /// ```
     /// use gsim_core::cli::CliConfig;
@@ -153,6 +159,14 @@ impl CliConfig {
         S: AsRef<str>,
     {
         let argv: Vec<String> = args.into_iter().map(|s| s.as_ref().to_owned()).collect();
+        // Help wins over everything: detect it before any validation so
+        // `--help` always prints, even next to typos or bad values.
+        if argv.iter().skip(1).any(|a| a == "--help" || a == "-h") {
+            return CliConfig {
+                help: true,
+                ..CliConfig::default()
+            };
+        }
         let mut cfg = CliConfig::default();
         let mut i = 1;
         while i < argv.len() {
@@ -209,6 +223,63 @@ impl CliConfig {
             i += 1;
         }
         cfg
+    }
+    /// The `-h`/`--help` reference: every flag, its usage, window controls,
+    /// and examples.
+    ///
+    /// ```
+    /// use gsim_core::cli::CliConfig;
+    /// let help = CliConfig::help_text();
+    /// assert!(help.contains("--bench"));
+    /// assert!(help.contains("--sweep-steps"));
+    /// assert!(help.contains("EXAMPLES"));
+    /// ```
+    pub fn help_text() -> &'static str {
+        "\
+gsim_app — GPU-only 2-D all-pairs gravity sim (Rust + wgpu + WGSL compute/render)
+
+USAGE:
+    gsim_app [FLAGS]
+
+MODES (default is the interactive window):
+    (none)       Interactive winit window with egui HUD (needs a display)
+    --bench      Headless 4-stage benchmark ladder + N-scaling sweep, then exit
+    --headless   No window: run --steps physics steps, print a JSON summary
+
+FLAGS:
+    -h, --help            Print this help and exit
+    --bench               Benchmark mode (see MODES)
+    --headless            Headless mode (see MODES)
+    --seed <u64>          RNG seed (default: 12345)
+    --n <usize>           Spawn particle count (default: 10000)
+    --backend <name>      vulkan | dx12 (default: vulkan; dx12 needs Windows)
+    --adapter <usize>     Adapter index among enumerated adapters (default: 0)
+    --steps <u64>         Physics steps for headless/bench runs (default: 600)
+    --dump <path>         Write the JSON summary to <path> instead of stdout
+    --mode <name>         naive | tiled — force kernel (default: tiled)
+    --merge-mode <name>   parallel | serial — collision merge path
+                          (default: parallel; serial replicates the legacy
+                          ascending scan exactly, for parity tests)
+    --no-accel-cache      Disable the cross-step acceleration cache
+    --telemetry <path>    Telemetry JSONL path (default: telemetry/stage2.jsonl)
+    --sweep <csv>         Rung-4 N-sweep list, e.g. 1000,5000,10000 (bench mode)
+    --sweep-steps <u64>   Physics steps per sweep point (default: 4)
+
+INTERACTIVE CONTROLS:
+    Space         pause / resume
+    R             reset (respawn, clear trails and accumulators)
+    T             toggle trail visibility (data is kept)
+    Up / Down     time scale x2 / x0.5 (range 0.125-4)
+    Mouse wheel   zoom (x1.03 per notch, clamped 0.05-5)
+
+EXAMPLES:
+    gsim_app --help
+    gsim_app                                        # interactive window
+    gsim_app --headless --n 2000 --steps 60
+    gsim_app --bench --backend dx12 --adapter 0
+    gsim_app --seed 777 --n 5000 --mode naive --merge-mode serial
+    gsim_app --bench --sweep 1000,5000,10000 --sweep-steps 30
+"
     }
 }
 

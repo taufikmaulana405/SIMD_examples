@@ -16,22 +16,25 @@ at time_scale=1 needs ≥120 steps/s at N=10 000, including merging and render.
 - A real GPU with current drivers (NVIDIA/AMD/Intel)
 - One of: **Vulkan** drivers (recommended) or **DirectX 12** (backend chosen
   with `--backend vulkan|dx12`)
-- No installation — this folder is self-contained: `gsim_app.exe`,
-  `bench.ps1`, and this file
+- No installation — this folder is self-contained: the timestamped
+  `gsim_app_yyyyMMdd_HHmmss.exe` binary, `bench.ps1`, and this file.
+  (The timestamp defeats browser caching: every new build downloads under
+  a fresh name. `bench.ps1` automatically uses the newest timestamped
+  binary next to it.)
 
 ## Running
 
-From a terminal in this folder:
+From a terminal in this folder (replace the timestamp with your build's):
 
 ```powershell
-.\gsim_app.exe --help
+.\gsim_app_20261018_072950.exe --help
 ```
 
 **Windowed (interactive):**
 
 ```powershell
-.\gsim_app.exe                # defaults: N=10000, seed 12345, tiled GPU kernel
-.\gsim_app.exe --backend vulkan --adapter 0
+.\gsim_app_20261018_072950.exe                # defaults: N=10000, seed 12345, tiled GPU kernel
+.\gsim_app_20261018_072950.exe --backend vulkan --adapter 0
 ```
 
 Window controls (same as legacy):
@@ -52,9 +55,9 @@ help; plus a dropped-step counter (legacy silently dropped backlog after
 **Flags:**
 
 ```powershell
-.\gsim_app.exe --bench                        # full 4-stage benchmark ladder
-.\gsim_app.exe --headless --n 2000 --steps 60  # no window, physics only
-.\gsim_app.exe --seed 777 --n 5000 --backend dx12 --adapter 1
+.\gsim_app_20261018_072950.exe --bench                        # full 4-stage benchmark ladder
+.\gsim_app_20261018_072950.exe --headless --n 2000 --steps 60  # no window, physics only
+.\gsim_app_20261018_072950.exe --seed 777 --n 5000 --backend dx12 --adapter 1
 ```
 
 `--help` lists everything: `--bench --headless --seed --n --backend
@@ -105,7 +108,8 @@ Before trusting any number, run through these once:
    particles, trails, and the egui HUD (4 text areas, top-left). No validation
    errors, no crash on resize.
 2. **Tiled-mode bitwise parity re-verified.** Run
-   `.\gsim_app.exe --bench` and confirm the `parity` record reports
+   `.\gsim_app_20261018_072950.exe --bench` (or just `.\bench.ps1`, which
+   picks the newest timestamped binary) and confirm the `parity` record reports
    `match: true` for **both** the naive and the tiled kernel (N=256, 20
    steps, serial merge). *Why this matters: on Mesa lavapipe (the software
    Vulkan used during development) the tiled kernel was nondeterministic with

@@ -8,7 +8,10 @@
 
     The .exe itself is produced by Stage 4 (cargo-xwin cross-compilation to
     x86_64-pc-windows-msvc); this script is complete and only needs the
-    binary next to it (or at -Exe). Copy the resulting
+    binary next to it (or at -Exe). Release binaries are timestamped
+    (gsim_app_yyyyMMdd_HHmmss.exe) so browsers never serve a cached stale
+    copy; when -Exe is not given explicitly, the newest timestamped binary
+    in the script folder is picked automatically. Copy the resulting
     telemetry/windows_<timestamp>.json back for ingestion into the project
     telemetry.
 .EXAMPLE
@@ -33,8 +36,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Release binaries are timestamped (gsim_app_yyyyMMdd_HHmmss.exe) so a fresh
+# download never collides with a browser-cached copy. Unless -Exe was given
+# explicitly, prefer the newest timestamped binary next to this script.
+if (-not $PSBoundParameters.ContainsKey('Exe')) {
+    $stamped = Get-ChildItem -Path $PSScriptRoot -Filter "gsim_app_*.exe" -File |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($stamped) { $Exe = $stamped.FullName }
+}
+
 if (-not (Test-Path $Exe)) {
-    throw "gsim_app.exe not found at '$Exe'. Build it first (Stage 4: cargo-xwin), or pass -Exe <path>."
+    throw "gsim_app binary not found at '$Exe'. Copy the newest gsim_app_<timestamp>.exe next to bench.ps1, or pass -Exe <path>."
 }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 

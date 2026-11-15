@@ -13,7 +13,7 @@ path = "src/main.rs"
 gsim_core = { path = "../gsim_core" }
 wgpu = "30.0.1"
 winit = "0.30.13"
-egui = "0.37.0"
+egui = { version = "0.37.0", features = ["default_fonts"] }
 egui-winit = "0.37.0"
 egui-wgpu = "0.37.0"
 serde_json = "1.0"
