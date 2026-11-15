@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e524dfb6fa1c6ad36368affc96dd522760b63d7c44128b1153b1aa20f4b00819 # shrinks to p = Particles { x: [0.0, 0.0, 0.0], y: [5.248867, 0.0, 0.0], vx: [0.0, 0.0, 0.0], vy: [0.0, 0.0, 0.0], mass: [9.679119, 54.331253, 23.505907], brightness: [0.55, 0.55, 0.55] }

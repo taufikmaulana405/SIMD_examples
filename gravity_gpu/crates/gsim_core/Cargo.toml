@@ -1,0 +1,19 @@
+[package]
+name = "gsim_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless GPU N-body simulation core: physics constants, seeded spawn, GPU compute driver, benchmarks"
+
+[lib]
+name = "gsim_core"
+path = "src/lib.rs"
+
+[dependencies]
+wgpu = "30.0.1"
+pollster = "1.0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+proptest = "1.12"

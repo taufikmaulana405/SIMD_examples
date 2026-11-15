@@ -1,0 +1,20 @@
+[package]
+name = "gsim_app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Thin winit+wgpu frontend for the GPU gravity sim: window, input, HUD, command submission"
+
+[[bin]]
+name = "gsim_app"
+path = "src/main.rs"
+
+[dependencies]
+gsim_core = { path = "../gsim_core" }
+wgpu = "30.0.1"
+winit = "0.30.13"
+egui = "0.37.0"
+egui-winit = "0.37.0"
+egui-wgpu = "0.37.0"
+serde_json = "1.0"
+pollster = "1.0.1"
