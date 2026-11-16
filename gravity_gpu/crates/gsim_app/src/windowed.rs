@@ -99,6 +99,8 @@ impl App {
             shader_debug: cfg.shader_debug,
             dxc_path: cfg.dxc_path.clone(),
             no_dxc: cfg.no_dxc,
+            trails: cfg.trails,
+            trail_max_age: cfg.trail_length,
         };
         let mut sim = Sim::from_context(ctx, sim_cfg, Some(surface_format)).expect("sim");
         sim.spawn();
@@ -146,7 +148,7 @@ impl App {
             egui_state,
             egui_renderer,
             paused: false,
-            trails_visible: false,
+            trails_visible: cfg.trails,
             time_scale: 1.0,
             zoom,
             accumulated: 0.0,
@@ -217,6 +219,7 @@ impl ApplicationHandler for App {
                         }
                         PhysicalKey::Code(KeyCode::KeyT) => {
                             gfx.trails_visible = !gfx.trails_visible;
+                            gfx.sim.set_trails_enabled(gfx.trails_visible);
                         }
                         PhysicalKey::Code(KeyCode::ArrowUp) => {
                             gfx.time_scale = (gfx.time_scale * 2.0).min(4.0);
@@ -311,7 +314,8 @@ impl Gfx {
             zoom: self.zoom,
             total_mass: self.stats.total_mass,
             trails_visible: self.trails_visible,
-            trail_instances: self.stats.trail_points,
+            trail_live: self.stats.trail_live,
+            trail_start: self.stats.trail_start,
         });
 
         self.egui_frame(&view, w, h, w as f32 / scale, h as f32 / scale);

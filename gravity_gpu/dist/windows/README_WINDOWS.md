@@ -44,6 +44,19 @@ which compiler is active, e.g. `DX12 shader compiler: embedded DXC` or
 compiler (e.g. to A/B compile times), pass `--no-dxc` (bench.ps1:
 `-NoDxc`); it disables DXC entirely and wins over `--dxc-path`.
 
+Trails are not recorded during benchmarks by default — they are never
+displayed there, so recording them is pure overhead. Pass `--trails`
+(bench.ps1: `-Trails`) to include trail recording in the measured step.
+In the interactive window, trails now behave the same way: T toggles
+recording as well as display, and turning them back on restarts the
+trail from the current positions. Trail length defaults to the
+previous program's limit — points expire after 40 s — and the renderer
+draws only live points, so expired ones cost nothing per frame. Set a
+different tail length with `--trail-length <seconds>` (bench.ps1:
+`-TrailLength`); the trail ring is sized to match (seconds × 45
+samples/s × N × 20 bytes — a 120 s tail at N=10000 needs ~1.1 GB of
+GPU memory, so longer tails get expensive fast).
+
 **Windowed (interactive):**
 
 ```powershell
@@ -57,7 +70,7 @@ Window controls (same as legacy):
 |------------------|-----------------------------------------------------|
 | Space            | pause / resume                                      |
 | R                | reset (respawn, clear trails and accumulators)       |
-| T                | toggle trail visibility (data is kept)              |
+| T                | toggle trails (off = not recorded; on = restarts)   |
 | Up / Down        | time scale ×2 / ×0.5 (range 0.125–4)                |
 | Mouse wheel      | zoom ×1.03 per notch, clamped [0.05, 5]             |
 

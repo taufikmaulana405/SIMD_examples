@@ -56,10 +56,14 @@ pub const TRAIL_MIN_WIDTH_PIXELS: f32 = 1.0;
 pub const TRAIL_MAX_WIDTH_PIXELS: f32 = 2.0;
 /// Multiplier on world-space diameter before the pixel clamp.
 pub const TRAIL_WIDTH_SCALE: f32 = 1.0;
-/// Fixed trail ring capacity in points (quirk f: legacy's unbounded
-/// `VecDeque` could reach 18 M points / 360 MB at N=10k; the ring caps it at
-/// 4 M points ≈ 80 MB and overwrites the oldest points when full).
-pub const TRAIL_MAX_POINTS: usize = 4_000_000;
+/// Ring capacity when trails can never be recorded or shown (bench /
+/// headless without `--trails`): the buffer must exist for the bind
+/// group, but nothing is ever appended. When trails are in play the
+/// ring holds `trail_max_age` seconds of points per particle at the
+/// 45 Hz sample rate (the default 40 s — the legacy limit — is 1800
+/// points per particle, the same footprint the previous program's
+/// unbounded deque reached: 18 M points / 360 MB at N=10k, quirk f).
+pub const TRAIL_RING_MIN_POINTS: usize = 1024;
 /// Bytes per trail point on the GPU: `pos:vec2<f32>, radius:f32,
 /// brightness:f32, birth:f32`.
 pub const TRAIL_POINT_BYTES: usize = 20;

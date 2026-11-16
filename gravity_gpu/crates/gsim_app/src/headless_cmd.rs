@@ -21,6 +21,8 @@ pub fn run(cfg: &CliConfig) {
         shader_debug: cfg.shader_debug,
         dxc_path: cfg.dxc_path.clone(),
         no_dxc: cfg.no_dxc,
+        trails: cfg.trails,
+        trail_max_age: cfg.trail_length,
     };
     let mut sim = match Sim::new(cfg.backend, cfg.adapter, sim_cfg, None) {
         Ok(s) => s,

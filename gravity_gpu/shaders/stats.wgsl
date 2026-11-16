@@ -124,13 +124,41 @@ fn finalize() {
         com_y = cy / mass;
     }
     let head = atomicLoad(&trail_head[0]);
-    let tp = min(head, TRAIL_MAX_POINTS);
+    let cap = trail_uni.capacity;
+    let tp = min(head, cap);
+    // Live (unexpired) points. Births are non-decreasing around the ring
+    // (appends are chronological; points from one tick share a birth),
+    // so the live points form a suffix of the ring's chronological arc:
+    // binary-search the first slot born after the age cutoff. This is
+    // the count the legacy HUD showed (its VecDeque physically removed
+    // expired points); `tp` above instead counts everything stored,
+    // including expired points the renderer merely culls.
+    var live = tp;
+    var start_slot = 0u;
+    if (tp > 0u) {
+        let cutoff = trail_uni.sim_time - bitcast<f32>(trail_uni.max_age_bits);
+        let start = select(0u, head % cap, head >= cap);
+        var lo = 0u;
+        var hi = tp;
+        while (lo < hi) {
+            let mid = (lo + hi) / 2u;
+            if (trail_ring[(start + mid) % cap].birth <= cutoff) {
+                lo = mid + 1u;
+            } else {
+                hi = mid;
+            }
+        }
+        live = tp - lo;
+        // First live slot in the ring: the renderer draws only the live
+        // arc [start_slot, start_slot + live), wrapping once if needed.
+        start_slot = (start + lo) % cap;
+    }
     stats_buf[0] = c;
     stats_buf[1] = bitcast<u32>(mass);
     stats_buf[2] = bitcast<u32>(maxm);
     stats_buf[3] = bitcast<u32>(com_x);
     stats_buf[4] = bitcast<u32>(com_y);
     stats_buf[5] = tp;
-    stats_buf[6] = 0u;
-    stats_buf[7] = 0u;
+    stats_buf[6] = live;
+    stats_buf[7] = start_slot;
 }

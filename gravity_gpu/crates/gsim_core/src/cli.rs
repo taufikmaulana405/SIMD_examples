@@ -127,6 +127,14 @@ pub struct CliConfig {
     /// Force the legacy FXC shader compiler on DX12, disabling DXC
     /// entirely (external and embedded). Wins over `--dxc-path`.
     pub no_dxc: bool,
+    /// Record particle trails (bench/headless). Windowed mode ignores
+    /// this at runtime — T toggles trails live — but starts with trails
+    /// visible when set. Default off: trails are never displayed in
+    /// bench/headless, so recording them is pure overhead.
+    pub trails: bool,
+    /// Trail length limit in sim-seconds (`--trail-length`); default
+    /// 40, the previous program's limit.
+    pub trail_length: f32,
 }
 
 impl Default for CliConfig {
@@ -151,6 +159,8 @@ impl Default for CliConfig {
             shader_debug: false,
             dxc_path: None,
             no_dxc: false,
+            trails: false,
+            trail_length: 40.0,
         }
     }
 }
@@ -252,6 +262,15 @@ impl CliConfig {
                     cfg.dxc_path = Some(value(&argv, i, "--dxc-path"));
                 }
                 "--no-dxc" => cfg.no_dxc = true,
+                "--trails" => cfg.trails = true,
+                "--trail-length" => {
+                    i += 1;
+                    let v: f32 = value(&argv, i, "--trail-length");
+                    if !v.is_finite() || v <= 0.0 {
+                        panic!("--trail-length must be a positive number of seconds, got {v}");
+                    }
+                    cfg.trail_length = v;
+                }
                 other => panic!("unknown argument: {other}"),
             }
             i += 1;
@@ -270,6 +289,8 @@ impl CliConfig {
     /// assert!(help.contains("--shader-debug"));
     /// assert!(help.contains("--dxc-path"));
     /// assert!(help.contains("--no-dxc"));
+    /// assert!(help.contains("--trails"));
+    /// assert!(help.contains("--trail-length"));
     /// assert!(help.contains("EXAMPLES"));
     /// ```
     pub fn help_text() -> &'static str {
@@ -314,11 +335,19 @@ FLAGS:
                           logs a warning and falls back to the embedded one
     --no-dxc              Force the legacy FXC shader compiler on DX12,
                           disabling DXC entirely (wins over --dxc-path)
+    --trails              Record particle trails in bench/headless mode
+                          (default: off — they are never displayed there,
+                          so recording is pure overhead). In windowed
+                          mode, start with trails visible (T toggles)
+    --trail-length <secs> Trail length limit in sim-seconds (default:
+                          40, the previous program's limit). Points older
+                          than this are not drawn. Longer tails use
+                          proportionally more GPU memory
 
 INTERACTIVE CONTROLS:
     Space         pause / resume
     R             reset (respawn, clear trails and accumulators)
-    T             toggle trail visibility (data is kept)
+    T             toggle trails (off = not computed; on = trail restarts)
     Up / Down     time scale x2 / x0.5 (range 0.125-4)
     Mouse wheel   zoom (x1.03 per notch, clamped 0.05-5)
 

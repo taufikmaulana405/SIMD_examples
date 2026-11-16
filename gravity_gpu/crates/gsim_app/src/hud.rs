@@ -29,9 +29,9 @@ impl Gfx {
             * 100.0;
         let state = if self.paused { "PAUSED" } else { "RUNNING" };
         let trails = if self.trails_visible {
-            "VISIBLE"
+            format!("VISIBLE (TAIL {:.0}s)", self.sim.trail_max_age())
         } else {
-            "HIDDEN"
+            "HIDDEN".to_string()
         };
         let largest_pct = if s.total_mass > 0.0 {
             s.max_mass / s.total_mass * 100.0
@@ -47,7 +47,7 @@ impl Gfx {
         let l2 = format!(
             "Total mass: {:.0} | Largest: {:.1} ({:.1}%) | COM: ({:.2}, {:.2}) | Time: {:.2}x | Zoom: {:.2}x | Trails: {} ({})",
             s.total_mass, s.max_mass, largest_pct, s.com_x, s.com_y,
-            self.time_scale, self.zoom, trails, s.trail_points
+            self.time_scale, self.zoom, trails, s.trail_live
         );
         let l3 = "Space: pause | R: reset | T: trails | Up/Down: time speed | Mouse wheel: zoom";
         let l4 = format!(

@@ -130,6 +130,8 @@ fn p4_long_run_stats_within_noise_floor() {
                 shader_debug: false,
                 dxc_path: None,
                 no_dxc: false,
+                trails: false,
+                trail_max_age: 40.0,
             },
             None,
         )

@@ -24,8 +24,13 @@ pub struct RenderParams<'a> {
     pub total_mass: f32,
     /// Whether the trail layer is drawn.
     pub trails_visible: bool,
-    /// Trail instances to draw (from the last stats readback).
-    pub trail_instances: u32,
+    /// Live (unexpired) trail points from the last stats readback —
+    /// the only points drawn.
+    pub trail_live: u32,
+    /// Ring slot of the oldest live point; the live arc is
+    /// `[trail_start, trail_start + trail_live)`, wrapping at the ring
+    /// capacity.
+    pub trail_start: u32,
 }
 
 impl Sim {
@@ -148,7 +153,8 @@ impl Sim {
             zoom,
             total_mass,
             trails_visible,
-            trail_instances,
+            trail_live,
+            trail_start,
         } = params;
         let cam = |zoom: f32, a: f32, b: f32| {
             let mut raw = Vec::with_capacity(32);
@@ -161,9 +167,11 @@ impl Sim {
         self.ctx
             .queue
             .write_buffer(&self.cam_particles, 0, &cam(zoom, total_mass, 0.0));
-        self.ctx
-            .queue
-            .write_buffer(&self.cam_trails, 0, &cam(zoom, self.sim_time, 0.0));
+        self.ctx.queue.write_buffer(
+            &self.cam_trails,
+            0,
+            &cam(zoom, self.sim_time, self.trail_max_age),
+        );
         let mut encoder = self
             .ctx
             .device
@@ -192,10 +200,17 @@ impl Sim {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if trails_visible && trail_instances > 0 {
+            // Draw only the live arc of the ring: expired points are
+            // never fetched. The arc wraps at most once.
+            if trails_visible && trail_live > 0 {
                 pass.set_pipeline(self.p_render_trails.as_ref().expect("render init"));
                 pass.set_bind_group(0, self.render_bg_trails.as_ref().expect("render init"), &[]);
-                pass.draw(0..6, 0..trail_instances);
+                let cap = self.trail_capacity;
+                let end = trail_start + trail_live;
+                pass.draw(0..6, trail_start..end.min(cap));
+                if end > cap {
+                    pass.draw(0..6, 0..(end - cap));
+                }
             }
             pass.set_pipeline(self.p_render_particles.as_ref().expect("render init"));
             pass.set_bind_group(

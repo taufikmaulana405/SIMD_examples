@@ -23,6 +23,8 @@ fn defaults_match_stage1_harness() {
     assert!(!cfg.shader_debug);
     assert!(cfg.dxc_path.is_none());
     assert!(!cfg.no_dxc);
+    assert!(!cfg.trails);
+    assert_eq!(cfg.trail_length, 40.0);
     assert!(cfg.dump.is_none() && cfg.telemetry.is_none() && cfg.sweep.is_none());
 }
 
@@ -61,6 +63,9 @@ fn every_flag_parses() {
         "--dxc-path",
         "C:\\dxc",
         "--no-dxc",
+        "--trails",
+        "--trail-length",
+        "25",
     ]);
     assert!(cfg.bench && cfg.headless && cfg.no_accel_cache);
     assert_eq!(cfg.seed, 7);
@@ -77,6 +82,8 @@ fn every_flag_parses() {
     assert!(cfg.shader_debug);
     assert_eq!(cfg.dxc_path.as_deref(), Some("C:\\dxc"));
     assert!(cfg.no_dxc);
+    assert!(cfg.trails);
+    assert_eq!(cfg.trail_length, 25.0);
 }
 
 #[test]
@@ -162,6 +169,8 @@ fn help_text_covers_every_flag() {
         "--shader-debug",
         "--dxc-path",
         "--no-dxc",
+        "--trails",
+        "--trail-length",
     ] {
         assert!(help.contains(flag), "help text missing {flag}");
     }

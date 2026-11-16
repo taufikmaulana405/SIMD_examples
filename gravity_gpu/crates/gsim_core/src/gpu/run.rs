@@ -65,6 +65,10 @@ impl Sim {
         word(&self.accel_valid, 0);
         word(&self.alive_count, 0);
         word(&self.trail_head, 0);
+        // Trail uniform: sim_time 0 + this sim's ring capacity and the
+        // current length limit (read by the append shader and by the
+        // stats live-point count).
+        q.write_buffer(&self.trail_uni, 0, &self.trail_uni_bytes(0.0));
         // merged_root is cleared per-step by `integrate`; zero it here for
         // a clean initial state.
         q.write_buffer(&self.merged_root, 0, &vec![0u8; self.cfg.n_max * 4]);
@@ -73,6 +77,33 @@ impl Sim {
         self.step_count = 0;
         // Fresh positions: the acceleration cache is invalid.
         self.accel_valid_cpu = false;
+    }
+
+    /// Whether trail points are currently being recorded.
+    pub fn trails_enabled(&self) -> bool {
+        self.trails_enabled
+    }
+
+    /// Start or stop recording trail points. Either transition resets
+    /// the ring (head = 0): stopping leaves stats and the renderer with
+    /// nothing to draw, and (re)starting rebuilds the trail from the
+    /// current positions instead of resurrecting points recorded before
+    /// the gap. While disabled, `step` runs no trail append dispatch.
+    pub fn set_trails_enabled(&mut self, on: bool) {
+        if on == self.trails_enabled {
+            return;
+        }
+        self.trails_enabled = on;
+        self.ctx
+            .queue
+            .write_buffer(&self.trail_head, 0, &0u32.to_le_bytes());
+        self.trail_acc = 0.0;
+    }
+
+    /// The configured trail length limit in sim-seconds (points older
+    /// than this are culled at render and excluded from the live count).
+    pub fn trail_max_age(&self) -> f32 {
+        self.trail_max_age
     }
 
     /// One compute dispatch into `encoder`.
@@ -185,19 +216,24 @@ impl Sim {
         }
 
         // Trail sampling on SIM time (quirk-e fix): 1/45 s of sim time.
-        self.trail_acc += PHYSICS_DT;
-        if self.trail_acc >= TRAIL_SAMPLE_INTERVAL_SECONDS {
-            self.trail_acc -= TRAIL_SAMPLE_INTERVAL_SECONDS;
-            let t = self.sim_time + PHYSICS_DT;
-            let mut raw = t.to_le_bytes().to_vec();
-            raw.extend_from_slice(&[0u8; 12]);
-            self.ctx.queue.write_buffer(&self.trail_uni, 0, &raw);
-            if timed {
-                self.timer.section_start(&mut encoder, "trail");
-            }
-            self.dispatch_into(&mut encoder, "trail", &self.pipes.trail, d256);
-            if timed {
-                self.timer.section_end(&mut encoder);
+        // Skipped entirely while trails are disabled — the points are
+        // only ever consumed by the trail renderer, so recording them
+        // when nothing displays them is pure overhead.
+        if self.trails_enabled {
+            self.trail_acc += PHYSICS_DT;
+            if self.trail_acc >= TRAIL_SAMPLE_INTERVAL_SECONDS {
+                self.trail_acc -= TRAIL_SAMPLE_INTERVAL_SECONDS;
+                let t = self.sim_time + PHYSICS_DT;
+                self.ctx
+                    .queue
+                    .write_buffer(&self.trail_uni, 0, &self.trail_uni_bytes(t));
+                if timed {
+                    self.timer.section_start(&mut encoder, "trail");
+                }
+                self.dispatch_into(&mut encoder, "trail", &self.pipes.trail, d256);
+                if timed {
+                    self.timer.section_end(&mut encoder);
+                }
             }
         }
 
@@ -216,8 +252,26 @@ impl Sim {
         }
     }
 
+    /// Pack the trail uniform: (sim_time, ring capacity, max-age bits,
+    /// pad). The append shader reads the capacity; the stats finalize
+    /// reads all three fields to count live (unexpired) trail points.
+    fn trail_uni_bytes(&self, sim_time: f32) -> [u8; 16] {
+        let mut raw = Vec::with_capacity(16);
+        raw.extend_from_slice(&sim_time.to_le_bytes());
+        raw.extend_from_slice(&self.trail_capacity.to_le_bytes());
+        raw.extend_from_slice(&self.trail_max_age.to_bits().to_le_bytes());
+        raw.extend_from_slice(&[0u8; 4]);
+        raw.try_into().expect("16 bytes")
+    }
+
     /// Dispatch the two-stage stats reduction (call before [`Sim::read_stats`]).
     pub fn update_stats(&mut self) {
+        // Refresh the trail uniform so the finalize live-point count
+        // uses the exact current sim time and limit state (the copy
+        // queued here lands before the stats submission below).
+        self.ctx
+            .queue
+            .write_buffer(&self.trail_uni, 0, &self.trail_uni_bytes(self.sim_time));
         let mut encoder = self
             .ctx
             .device

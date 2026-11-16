@@ -3,7 +3,8 @@
 //! Buffer plan (SoA, blueprint §3): live set `A` (`pos/vel/mass/brightness/
 //! accel`), scratch set `B` for merge compaction, union-find `parent`,
 //! single-word flags (`merge_flag`, `accel_valid`, `alive_count`, `n_buf`),
-//! the 4 M-point trail ring, and the 32-byte stats buffer. All compute
+//! the trail ring (sized to the configured trail length), and the
+//! 32-byte stats buffer. All compute
 //! shaders share one bind-group layout; see `shaders/common.wgsl`.
 
 use crate::cli::Backend;
@@ -97,6 +98,15 @@ pub struct Sim {
     /// Sim seconds elapsed (drives trail sampling).
     pub sim_time: f32,
     pub(crate) trail_acc: f32,
+    /// Whether trail points are being recorded. When false, `step`
+    /// skips the trail append dispatch entirely.
+    pub(crate) trails_enabled: bool,
+    /// Trail ring capacity in points (sized from `trail_max_age`).
+    pub(crate) trail_capacity: u32,
+    /// Trail length limit in sim-seconds: points older than this are
+    /// culled at render and excluded from the live count. Configured
+    /// via `--trail-length` (default 40, the legacy limit).
+    pub(crate) trail_max_age: f32,
     /// Physics steps executed.
     pub step_count: u64,
     /// CPU-tracked acceleration cache validity (replaces the retired GPU
@@ -215,11 +225,23 @@ impl Sim {
             wgpu::BufferUsages::COPY_SRC,
         );
 
+        // Trail ring sized to the configured length limit
+        // (trail_max_age seconds of points per particle at the 45 Hz
+        // sample rate) whenever trails can be recorded or shown; a
+        // token ring when they cannot (bench/headless without
+        // --trails), since nothing is ever appended then.
+        let points_per_particle =
+            ((cfg.trail_max_age / TRAIL_SAMPLE_INTERVAL_SECONDS).round() as usize).max(1);
+        let trail_capacity = if cfg.trails || surface_format.is_some() {
+            cfg.n_max * points_per_particle
+        } else {
+            TRAIL_RING_MIN_POINTS
+        };
         let trail_ring = storage_buf(
             device,
             &mut vram,
             "trail_ring",
-            (TRAIL_MAX_POINTS * TRAIL_POINT_BYTES) as u64,
+            (trail_capacity * TRAIL_POINT_BYTES) as u64,
             wgpu::BufferUsages::empty(),
         );
         let trail_head = word_buf(device, &mut vram, "trail_head");
@@ -361,6 +383,8 @@ impl Sim {
         let cam_trails = cam_buf("cam_trails");
 
         let timer = GpuTimer::new(&ctx.device, &ctx.queue);
+        let trails_enabled = cfg.trails;
+        let trail_max_age = cfg.trail_max_age;
         let mut sim = Self {
             ctx,
             cfg,
@@ -402,6 +426,9 @@ impl Sim {
             timer,
             sim_time: 0.0,
             trail_acc: 0.0,
+            trails_enabled,
+            trail_capacity: trail_capacity as u32,
+            trail_max_age,
             step_count: 0,
             accel_valid_cpu: false,
         };

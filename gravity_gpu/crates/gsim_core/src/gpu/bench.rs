@@ -88,10 +88,17 @@ pub struct BenchmarkRunner {
     pub dxc_path: Option<String>,
     /// Force FXC for every sim this runner builds (DX12 only).
     pub no_dxc: bool,
+    /// Record trails in every sim this runner builds.
+    pub trails: bool,
+    /// Trail length limit for every sim this runner builds.
+    pub trail_max_age: f32,
 }
 
 impl BenchmarkRunner {
     /// Query the adapter (no device yet) and prepare telemetry.
+    // Plain data-bundle constructor; the argument list mirrors the CLI's
+    // run-shaping flags one-to-one.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         backend: Backend,
         adapter_index: usize,
@@ -100,6 +107,8 @@ impl BenchmarkRunner {
         shader_debug: bool,
         dxc_path: Option<String>,
         no_dxc: bool,
+        trails: bool,
+        trail_max_age: f32,
     ) -> Result<Self, String> {
         let adapters = GpuContext::list_adapters(backend);
         let adapter_info = adapters
@@ -115,6 +124,8 @@ impl BenchmarkRunner {
             shader_debug,
             dxc_path,
             no_dxc,
+            trails,
+            trail_max_age,
         })
     }
 
@@ -141,6 +152,8 @@ impl BenchmarkRunner {
             shader_debug: self.shader_debug,
             dxc_path: self.dxc_path.clone(),
             no_dxc: self.no_dxc,
+            trails: self.trails,
+            trail_max_age: self.trail_max_age,
         }
     }
 

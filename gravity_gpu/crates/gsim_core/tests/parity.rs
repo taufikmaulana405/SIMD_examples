@@ -42,6 +42,8 @@ fn sim(n: usize, mode: GpuMode, merge: MergeMode, seed: u64) -> Sim {
             shader_debug: false,
             dxc_path: None,
             no_dxc: false,
+            trails: false,
+            trail_max_age: 40.0,
         },
         None,
     )

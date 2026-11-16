@@ -1,10 +1,10 @@
 // Instanced trail renderer. One instance per stored ring point (the CPU
-// sizes the draw from the last stats readback). Points older than 40 sim-s
-// or off-screen are culled in the vertex shader; alpha fades with a 10 s
-// half-life per the legacy §8 trail spec.
+// sizes the draw from the last stats readback). Points older than the
+// camera's max_age (the legacy 40 sim-s trail length limit; lifted by
+// the L key) or off-screen are culled in the vertex shader; alpha fades
+// with a 10 s half-life per the legacy §8 trail spec.
 
 const TRAIL_HALF_LIFE: f32 = 10.0;
-const TRAIL_MAX_AGE: f32 = 40.0;
 const TRAIL_INITIAL_ALPHA: f32 = 0.35;
 const TRAIL_MIN_W: f32 = 1.0;
 const TRAIL_MAX_W: f32 = 2.0;
@@ -20,7 +20,9 @@ struct Camera {
     screen: vec2<f32>,
     zoom: f32,
     sim_time: f32,
-    _pad: f32,
+    // Trail length limit in sim-seconds (legacy max age 40 s;
+    // f32::MAX from the CPU = limit lifted, L key).
+    max_age: f32,
 };
 
 @group(0) @binding(0) var<storage, read> ring: array<TrailPoint>;
@@ -58,7 +60,7 @@ fn vs(
 ) -> VOut {
     let p = ring[inst];
     let age = cam.sim_time - p.birth;
-    if (age < 0.0 || age >= TRAIL_MAX_AGE) {
+    if (age < 0.0 || age >= cam.max_age) {
         return cull();
     }
     let w = clamp(p.radius * cam.zoom * 2.0, TRAIL_MIN_W, TRAIL_MAX_W);

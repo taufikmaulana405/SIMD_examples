@@ -6,7 +6,6 @@ const SOFTENING_SQ: f32 = 9.0; // 3.0^2
 const DT: f32 = 1.0 / 120.0;
 const RADIUS_SCALE: f32 = 0.45;
 
-const TRAIL_MAX_POINTS: u32 = 4000000u;
 const TRAIL_HALF_LIFE: f32 = 10.0;
 const TRAIL_MAX_AGE: f32 = 40.0;
 const TRAIL_INITIAL_ALPHA: f32 = 0.35;
@@ -29,7 +28,13 @@ struct TrailPoint {
 
 struct TrailUni {
     sim_time: f32,
-    _pad: vec3<u32>,
+    // Ring capacity in points (per-Sim: n_max × trail_max_age × 45 Hz;
+    // see gsim_core::constants).
+    capacity: u32,
+    // Trail length limit as f32 bits (sim-seconds; default 40, the
+    // legacy limit). The stats finalize uses it to count live points.
+    max_age_bits: u32,
+    _pad: u32,
 };
 
 @group(0) @binding(0) var<storage, read_write> pos_a: array<vec2<f32>>;

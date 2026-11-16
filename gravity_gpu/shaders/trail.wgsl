@@ -15,7 +15,7 @@ fn append(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (m <= 0.0) {
         return;
     }
-    let slot = atomicAdd(&trail_head[0], 1u) % TRAIL_MAX_POINTS;
+    let slot = atomicAdd(&trail_head[0], 1u) % trail_uni.capacity;
     trail_ring[slot] = TrailPoint(
         pos_a[i],
         RADIUS_SCALE * sqrt(m),

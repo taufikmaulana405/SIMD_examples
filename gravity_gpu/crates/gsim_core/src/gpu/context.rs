@@ -31,6 +31,14 @@ pub struct SimConfig {
     pub dxc_path: Option<String>,
     /// Force FXC on DX12, disabling DXC entirely (wins over `dxc_path`).
     pub no_dxc: bool,
+    /// Record particle trails. When false, the trail append dispatch
+    /// never runs (bench/headless default: trails are never displayed
+    /// there). Toggleable at runtime via `Sim::set_trails_enabled`.
+    pub trails: bool,
+    /// Trail length limit in sim-seconds (default 40, the legacy
+    /// program's limit): older points are culled at render and excluded
+    /// from the live count. Also sizes the trail ring.
+    pub trail_max_age: f32,
 }
 
 /// Locate `dxcompiler.dll` for the DX12 backend.

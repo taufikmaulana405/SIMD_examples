@@ -125,6 +125,8 @@ fn stats_struct_correctness() {
         com_x: 2.0,
         com_y: 4.0,
         trail_points: 42,
+        trail_live: 17,
+        trail_start: 5,
     };
     let back = Stats::from_words(&s.to_words());
     assert_eq!(s, back);

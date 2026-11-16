@@ -46,6 +46,8 @@ pub fn run(cfg: &CliConfig) {
         cfg.shader_debug,
         cfg.dxc_path.clone(),
         cfg.no_dxc,
+        cfg.trails,
+        cfg.trail_length,
     ) {
         Ok(r) => r,
         Err(e) => {

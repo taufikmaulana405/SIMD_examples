@@ -23,6 +23,8 @@
     .\bench.ps1 -LogLevel debug         # verbose logging without shader capture
     .\bench.ps1 -DxcPath C:\dxc         # use dxcompiler.dll from a specific folder (default: exe folder, then PATH)
     .\bench.ps1 -NoDxc                  # force the legacy FXC compiler (DXC disabled; A/B compile-time comparisons)
+    .\bench.ps1 -Trails                 # also record particle trails (off by default in bench: never displayed there)
+    .\bench.ps1 -TrailLength 10         # set the trail length limit in seconds (default 40, the legacy limit)
 #>
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "gsim_app.exe"),
@@ -40,7 +42,9 @@ param(
     [ValidateSet("error", "warn", "info", "debug", "trace")][string]$LogLevel = "info",
     [switch]$ShaderDebug,
     [string]$DxcPath = "",
-    [switch]$NoDxc
+    [switch]$NoDxc,
+    [switch]$Trails,
+    [double]$TrailLength = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -95,6 +99,12 @@ if ($DxcPath -ne "") {
 }
 if ($NoDxc) {
     $exeArgs += @("--no-dxc")
+}
+if ($Trails) {
+    $exeArgs += @("--trails")
+}
+if ($TrailLength -gt 0) {
+    $exeArgs += @("--trail-length", $TrailLength)
 }
 
 Write-Host "== gsim Windows benchmark =="
