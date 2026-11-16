@@ -147,7 +147,7 @@ impl Sim {
         cfg: SimConfig,
         surface_format: Option<wgpu::TextureFormat>,
     ) -> Result<Self, String> {
-        let ctx = GpuContext::open(backend, adapter_index)?;
+        let ctx = GpuContext::open(backend, adapter_index, cfg.dxc_path.as_deref(), cfg.no_dxc)?;
         Self::from_context(ctx, cfg, surface_format)
     }
 

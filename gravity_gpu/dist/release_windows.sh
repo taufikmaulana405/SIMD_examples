@@ -6,6 +6,15 @@
 # timestamped binary, so nothing else needs updating.
 set -euo pipefail
 export PATH="$HOME/.cargo/bin:$PATH"
+# Static-DXC build requirements (embedded DXC, windows/msvc):
+# - TAR_OPTIONS=--no-same-owner: mach-dxcompiler-rs's build script untars
+#   its prebuilt libs; this sandbox's tar dies on ownership preservation.
+# - XWIN_INCLUDE_ATL=true: DXC's static lib needs atls.lib (ATL). The
+#   xwin cache in ~/.cache/cargo-xwin already contains ATL (grafted in
+#   2026-10-20); if the cache is ever rebuilt from scratch, pre-cache
+#   with this env set so ATL is included from the start.
+export TAR_OPTIONS=--no-same-owner
+export XWIN_INCLUDE_ATL=true
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 cargo xwin build --release --target x86_64-pc-windows-msvc -p gsim_app

@@ -35,16 +35,67 @@ fn partial(
     sh_f[lid.x] = vec4<f32>(mass, maxm, cx, cy);
     sh_c[lid.x] = c;
     workgroupBarrier();
-    for (var s = 128u; s > 0u; s >>= 1u) {
-        if (lid.x < s) {
-            let a = sh_f[lid.x];
-            let b = sh_f[lid.x + s];
-            sh_f[lid.x] =
-                vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
-            sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + s];
-        }
-        workgroupBarrier();
+    // Tree reduction, fully unrolled (was: for (var s = 128u; s > 0u; s >>= 1u)).
+    // The loop form places workgroupBarrier() inside naga's while(true) loop
+    // emulation; FXC (DX12) takes ~9s to compile that on EVERY launch
+    // (stats::partial measured 8.56s cold / 9.31s warm). Unrolled, no barrier
+    // sits in a loop. Same operations in the same order: bit-identical.
+    if (lid.x < 128u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 128u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 128u];
     }
+    workgroupBarrier();
+    if (lid.x < 64u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 64u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 64u];
+    }
+    workgroupBarrier();
+    if (lid.x < 32u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 32u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 32u];
+    }
+    workgroupBarrier();
+    if (lid.x < 16u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 16u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 16u];
+    }
+    workgroupBarrier();
+    if (lid.x < 8u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 8u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 8u];
+    }
+    workgroupBarrier();
+    if (lid.x < 4u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 4u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 4u];
+    }
+    workgroupBarrier();
+    if (lid.x < 2u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 2u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 2u];
+    }
+    workgroupBarrier();
+    if (lid.x < 1u) {
+        let a = sh_f[lid.x];
+        let b = sh_f[lid.x + 1u];
+        sh_f[lid.x] = vec4<f32>(a.x + b.x, max(a.y, b.y), a.z + b.z, a.w + b.w);
+        sh_c[lid.x] = sh_c[lid.x] + sh_c[lid.x + 1u];
+    }
+    workgroupBarrier();
     if (lid.x == 0u) {
         partials_f[wid.x] = sh_f[0];
         partials_c[wid.x] = sh_c[0];

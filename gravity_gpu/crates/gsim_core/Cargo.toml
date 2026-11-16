@@ -16,5 +16,12 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4"
 
+# Embedded DXC: windows/msvc builds statically link the DX12 shader
+# compiler (wgpu's static-dxc feature), so DX12 runs can fall back to an
+# internal DXC when no external dxcompiler.dll is found. Runtime
+# selection lives in gpu/context.rs (external > embedded > FXC).
+[target.'cfg(all(target_os = "windows", target_env = "msvc"))'.dependencies]
+wgpu = { version = "30.0.1", features = ["static-dxc"] }
+
 [dev-dependencies]
 proptest = "1.12"

@@ -84,6 +84,10 @@ pub struct BenchmarkRunner {
     pub adapter_info: AdapterInfo,
     /// Enable GPU shader-debug logging on every sim this runner builds.
     pub shader_debug: bool,
+    /// Explicit DXC path for every sim this runner builds (DX12 only).
+    pub dxc_path: Option<String>,
+    /// Force FXC for every sim this runner builds (DX12 only).
+    pub no_dxc: bool,
 }
 
 impl BenchmarkRunner {
@@ -94,6 +98,8 @@ impl BenchmarkRunner {
         seed: u64,
         telemetry_path: PathBuf,
         shader_debug: bool,
+        dxc_path: Option<String>,
+        no_dxc: bool,
     ) -> Result<Self, String> {
         let adapters = GpuContext::list_adapters(backend);
         let adapter_info = adapters
@@ -107,6 +113,8 @@ impl BenchmarkRunner {
             telemetry_path,
             adapter_info,
             shader_debug,
+            dxc_path,
+            no_dxc,
         })
     }
 
@@ -131,6 +139,8 @@ impl BenchmarkRunner {
             spawn_radius,
             workgroup_size: 0,
             shader_debug: self.shader_debug,
+            dxc_path: self.dxc_path.clone(),
+            no_dxc: self.no_dxc,
         }
     }
 

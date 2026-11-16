@@ -21,6 +21,8 @@ fn defaults_match_stage1_harness() {
     assert_eq!(cfg.sweep_steps, 4);
     assert!(matches!(cfg.log_level, LogLevel::Info));
     assert!(!cfg.shader_debug);
+    assert!(cfg.dxc_path.is_none());
+    assert!(!cfg.no_dxc);
     assert!(cfg.dump.is_none() && cfg.telemetry.is_none() && cfg.sweep.is_none());
 }
 
@@ -56,6 +58,9 @@ fn every_flag_parses() {
         "--log-level",
         "debug",
         "--shader-debug",
+        "--dxc-path",
+        "C:\\dxc",
+        "--no-dxc",
     ]);
     assert!(cfg.bench && cfg.headless && cfg.no_accel_cache);
     assert_eq!(cfg.seed, 7);
@@ -70,6 +75,8 @@ fn every_flag_parses() {
     assert_eq!(cfg.sweep_steps, 9);
     assert!(matches!(cfg.log_level, LogLevel::Debug));
     assert!(cfg.shader_debug);
+    assert_eq!(cfg.dxc_path.as_deref(), Some("C:\\dxc"));
+    assert!(cfg.no_dxc);
 }
 
 #[test]
@@ -153,6 +160,8 @@ fn help_text_covers_every_flag() {
         "--sweep-steps",
         "--log-level",
         "--shader-debug",
+        "--dxc-path",
+        "--no-dxc",
     ] {
         assert!(help.contains(flag), "help text missing {flag}");
     }

@@ -24,6 +24,8 @@ fn cfg(n: usize, mode: GpuMode, merge: MergeMode, seed: u64) -> SimConfig {
         spawn_radius: SPAWN_RADIUS,
         workgroup_size: 128,
         shader_debug: false,
+        dxc_path: None,
+        no_dxc: false,
     }
 }
 
@@ -451,7 +453,8 @@ fn shader_source_unknown_panics() {
 fn bench_runner_smoke() {
     // Exercises gpu/bench.rs end to end at tiny sizes.
     let tel = std::env::temp_dir().join("gsim_stage3_bench_smoke.jsonl");
-    let runner = BenchmarkRunner::new(Backend::Vulkan, 0, 12345, tel, false).expect("runner");
+    let runner =
+        BenchmarkRunner::new(Backend::Vulkan, 0, 12345, tel, false, None, false).expect("runner");
     assert!(!runner.adapter_info.name.is_empty());
     let (best, table) = runner.autotune(64);
     assert!([64, 128, 256].contains(&best));

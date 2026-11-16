@@ -128,6 +128,8 @@ fn p4_long_run_stats_within_noise_floor() {
                 spawn_radius: SPAWN_RADIUS,
                 workgroup_size: 128,
                 shader_debug: false,
+                dxc_path: None,
+                no_dxc: false,
             },
             None,
         )

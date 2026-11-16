@@ -21,6 +21,8 @@
     .\bench.ps1 -Exe C:\gsim\gsim_app.exe -Sweep "1000,5000,10000,20000" -SweepSteps 30
     .\bench.ps1 -ShaderDebug            # GPU shader-debug capture (force-kernel (thread, ax, ay) records)
     .\bench.ps1 -LogLevel debug         # verbose logging without shader capture
+    .\bench.ps1 -DxcPath C:\dxc         # use dxcompiler.dll from a specific folder (default: exe folder, then PATH)
+    .\bench.ps1 -NoDxc                  # force the legacy FXC compiler (DXC disabled; A/B compile-time comparisons)
 #>
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "gsim_app.exe"),
@@ -36,7 +38,9 @@ param(
     [string]$OutDir = (Join-Path $PSScriptRoot "telemetry"),
     [string]$Telemetry = "",
     [ValidateSet("error", "warn", "info", "debug", "trace")][string]$LogLevel = "info",
-    [switch]$ShaderDebug
+    [switch]$ShaderDebug,
+    [string]$DxcPath = "",
+    [switch]$NoDxc
 )
 
 $ErrorActionPreference = "Stop"
@@ -85,6 +89,12 @@ if ($Telemetry -ne "") {
 }
 if ($ShaderDebug) {
     $exeArgs += @("--shader-debug")
+}
+if ($DxcPath -ne "") {
+    $exeArgs += @("--dxc-path", $DxcPath)
+}
+if ($NoDxc) {
+    $exeArgs += @("--no-dxc")
 }
 
 Write-Host "== gsim Windows benchmark =="

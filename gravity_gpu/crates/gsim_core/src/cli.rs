@@ -119,6 +119,14 @@ pub struct CliConfig {
     /// (kernel, thread, ax, ay) records to a debug buffer, read back on
     /// explicit request. Off by default; zero cost when off.
     pub shader_debug: bool,
+    /// Explicit path to `dxcompiler.dll` (or a folder containing it) for
+    /// the DX12 backend. Without it, the exe folder and PATH are searched.
+    /// If no external DXC is found, the embedded DXC compiler is used;
+    /// a `--dxc-path` that contains no DXC logs a warning.
+    pub dxc_path: Option<String>,
+    /// Force the legacy FXC shader compiler on DX12, disabling DXC
+    /// entirely (external and embedded). Wins over `--dxc-path`.
+    pub no_dxc: bool,
 }
 
 impl Default for CliConfig {
@@ -141,6 +149,8 @@ impl Default for CliConfig {
             sweep_steps: 4,
             log_level: LogLevel::Info,
             shader_debug: false,
+            dxc_path: None,
+            no_dxc: false,
         }
     }
 }
@@ -237,6 +247,11 @@ impl CliConfig {
                     });
                 }
                 "--shader-debug" => cfg.shader_debug = true,
+                "--dxc-path" => {
+                    i += 1;
+                    cfg.dxc_path = Some(value(&argv, i, "--dxc-path"));
+                }
+                "--no-dxc" => cfg.no_dxc = true,
                 other => panic!("unknown argument: {other}"),
             }
             i += 1;
@@ -253,6 +268,8 @@ impl CliConfig {
     /// assert!(help.contains("--sweep-steps"));
     /// assert!(help.contains("--log-level"));
     /// assert!(help.contains("--shader-debug"));
+    /// assert!(help.contains("--dxc-path"));
+    /// assert!(help.contains("--no-dxc"));
     /// assert!(help.contains("EXAMPLES"));
     /// ```
     pub fn help_text() -> &'static str {
@@ -290,6 +307,13 @@ FLAGS:
     --shader-debug         Enable GPU shader-debug logging (force-kernel
                           per-thread records, read back on request; zero cost
                           when off)
+    --dxc-path <path>     Path to dxcompiler.dll (or its folder) for the
+                          DX12 backend. Default: search the exe folder, then
+                          PATH; if no external DXC is found, the embedded
+                          DXC compiler is used. A path with no DXC in it
+                          logs a warning and falls back to the embedded one
+    --no-dxc              Force the legacy FXC shader compiler on DX12,
+                          disabling DXC entirely (wins over --dxc-path)
 
 INTERACTIVE CONTROLS:
     Space         pause / resume

@@ -40,6 +40,8 @@ fn sim(n: usize, mode: GpuMode, merge: MergeMode, seed: u64) -> Sim {
             spawn_radius: SPAWN_RADIUS,
             workgroup_size: 128,
             shader_debug: false,
+            dxc_path: None,
+            no_dxc: false,
         },
         None,
     )

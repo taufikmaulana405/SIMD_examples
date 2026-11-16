@@ -19,6 +19,8 @@ pub fn run(cfg: &CliConfig) {
         spawn_radius: SPAWN_RADIUS,
         workgroup_size: 128,
         shader_debug: cfg.shader_debug,
+        dxc_path: cfg.dxc_path.clone(),
+        no_dxc: cfg.no_dxc,
     };
     let mut sim = match Sim::new(cfg.backend, cfg.adapter, sim_cfg, None) {
         Ok(s) => s,

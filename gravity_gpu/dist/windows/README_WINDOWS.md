@@ -30,6 +30,20 @@ From a terminal in this folder (replace the timestamp with your build's):
 .\gsim_app_20261018_123611.exe --help
 ```
 
+**DX12 shader compiler (DXC vs FXC):** DXC compiles shaders much faster
+than the legacy FXC, and this exe carries an **embedded DXC** (statically
+linked), so DX12 always uses DXC even with no extra files. An external
+`dxcompiler.dll` still wins when found — searched, in order: the
+`--dxc-path <path>` value (a DLL file or its folder), the exe folder, then
+PATH (the separate download bundle ships Microsoft DXC v1.9.2609 x64 +
+`dxil.dll` if you want the external route). A `--dxc-path` containing no
+`dxcompiler.dll` logs a warning (`the DXC you specified is NOT being
+used`) and falls back to the embedded compiler. The startup log states
+which compiler is active, e.g. `DX12 shader compiler: embedded DXC` or
+`DX12 shader compiler: external DXC (<path>)`. To force the legacy FXC
+compiler (e.g. to A/B compile times), pass `--no-dxc` (bench.ps1:
+`-NoDxc`); it disables DXC entirely and wins over `--dxc-path`.
+
 **Windowed (interactive):**
 
 ```powershell

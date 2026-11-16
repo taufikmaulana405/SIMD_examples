@@ -65,7 +65,13 @@ impl App {
 
     fn init_gfx(&mut self, window: Arc<Window>) {
         let cfg = &self.cfg;
-        let ctx = GpuContext::open(cfg.backend, cfg.adapter).expect("open adapter");
+        let ctx = GpuContext::open(
+            cfg.backend,
+            cfg.adapter,
+            cfg.dxc_path.as_deref(),
+            cfg.no_dxc,
+        )
+        .expect("open adapter");
         // NOTE: must be DisplayAndWindow, not Window: wgpu 30's
         // `SurfaceTarget::Window` requires the display handle to have been
         // passed via `InstanceDescriptor::display` (ours is None), otherwise
@@ -91,6 +97,8 @@ impl App {
             spawn_radius: SPAWN_RADIUS,
             workgroup_size: 128,
             shader_debug: cfg.shader_debug,
+            dxc_path: cfg.dxc_path.clone(),
+            no_dxc: cfg.no_dxc,
         };
         let mut sim = Sim::from_context(ctx, sim_cfg, Some(surface_format)).expect("sim");
         sim.spawn();

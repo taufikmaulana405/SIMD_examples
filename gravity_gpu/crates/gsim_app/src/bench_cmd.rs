@@ -38,14 +38,21 @@ pub fn run(cfg: &CliConfig) {
         .clone()
         .map(PathBuf::from)
         .unwrap_or_else(default_path);
-    let runner =
-        match BenchmarkRunner::new(cfg.backend, cfg.adapter, cfg.seed, tele, cfg.shader_debug) {
-            Ok(r) => r,
-            Err(e) => {
-                log_error!("cannot open benchmark adapter: {e}");
-                std::process::exit(1);
-            }
-        };
+    let runner = match BenchmarkRunner::new(
+        cfg.backend,
+        cfg.adapter,
+        cfg.seed,
+        tele,
+        cfg.shader_debug,
+        cfg.dxc_path.clone(),
+        cfg.no_dxc,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            log_error!("cannot open benchmark adapter: {e}");
+            std::process::exit(1);
+        }
+    };
     let info = &runner.adapter_info;
     log_info!(
         "adapter: {} ({}, {})",
