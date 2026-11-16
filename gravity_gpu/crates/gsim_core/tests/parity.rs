@@ -39,6 +39,7 @@ fn sim(n: usize, mode: GpuMode, merge: MergeMode, seed: u64) -> Sim {
             no_accel_cache: false,
             spawn_radius: SPAWN_RADIUS,
             workgroup_size: 128,
+            shader_debug: false,
         },
         None,
     )

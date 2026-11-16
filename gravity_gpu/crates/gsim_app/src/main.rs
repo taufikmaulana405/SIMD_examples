@@ -25,8 +25,23 @@ fn main() {
     }
     // Logging first: everything below honors --log-level (default info).
     // Human-readable lines go to stderr; stdout stays clean for JSON.
-    gsim_core::log::set_max_level(cfg.log_level);
-    log_debug!("log level: {}", cfg.log_level);
+    //
+    // --shader-debug is an explicit debugging request whose output lives at
+    // DEBUG: without this, the flag alone would capture records but filter
+    // them, appearing broken. Raises from INFO (the default level); if both
+    // flags are given, the shader-debug intent wins.
+    let mut level = cfg.log_level;
+    if cfg.shader_debug && level == gsim_core::log::LogLevel::Info {
+        level = gsim_core::log::LogLevel::Debug;
+    }
+    gsim_core::log::set_max_level(level);
+    if level != cfg.log_level {
+        log_info!(
+            "--shader-debug: log level raised to {level} (was {})",
+            cfg.log_level
+        );
+    }
+    log_debug!("log level: {level}");
     log_info!("gsim_app starting (seed={}, n={})", cfg.seed, cfg.n);
     if cfg.bench {
         bench_cmd::run(&cfg);

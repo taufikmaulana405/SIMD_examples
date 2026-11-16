@@ -411,4 +411,97 @@ impl Sim {
         self.spawn();
         (best, table)
     }
+
+    /// Capture one step's shader-debug records (only meaningful with
+    /// `--shader-debug`, i.e. `SimConfig::shader_debug`; otherwise the
+    /// buffer stays empty and this returns nothing).
+    ///
+    /// Clears the debug counter, runs a single step, drains the queue, and
+    /// reads the records back. Returns `(records, attempted)` where
+    /// `attempted` is the total append count (records are capped at 1024).
+    ///
+    /// FORCES A GPU/CPU SYNC — never call this inside a timed loop.
+    pub fn capture_shader_debug(&mut self) -> (Vec<ShaderDbgRecord>, u32) {
+        self.ctx
+            .queue
+            .write_buffer(&self.dbg_count, 0, &0u32.to_le_bytes());
+        self.step();
+        self.ctx
+            .device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .expect("drain queue for shader-debug readback");
+        let count_raw = self.map_copy(&self.dbg_count, 4);
+        let attempted = u32::from_le_bytes(count_raw[..4].try_into().expect("4 bytes"));
+        let raw = self.map_copy(&self.dbg_buf, 4096 * 4);
+        let word = |k: usize| u32::from_le_bytes(raw[4 * k..4 * k + 4].try_into().expect("u32"));
+        let mut out = Vec::new();
+        for k in 0..attempted.min(1024) as usize {
+            out.push(ShaderDbgRecord {
+                tag: word(4 * k),
+                thread: word(4 * k + 1),
+                ax: f32::from_bits(word(4 * k + 2)),
+                ay: f32::from_bits(word(4 * k + 3)),
+            });
+        }
+        if attempted == 0 && self.pipes.shader_debug {
+            crate::log_warn!(
+                "shader_debug: capture recorded 0 appends; the SHADER_DEBUG \
+                 pipeline override may not have taken effect on this adapter"
+            );
+        }
+        (out, attempted)
+    }
+}
+
+/// One shader-debug record: which force kernel logged it, which thread,
+/// and the acceleration it computed.
+#[derive(Debug, Clone, Copy)]
+pub struct ShaderDbgRecord {
+    /// Kernel tag (`DBG_*` in `shaders/common.wgsl`).
+    pub tag: u32,
+    /// Force-kernel thread id (= body index).
+    pub thread: u32,
+    /// Computed x acceleration.
+    pub ax: f32,
+    /// Computed y acceleration.
+    pub ay: f32,
+}
+
+impl ShaderDbgRecord {
+    /// Human name for the kernel tag.
+    pub fn kernel_name(self) -> &'static str {
+        match self.tag {
+            1 => "naive",
+            2 => "tiled::pass1",
+            3 => "tiled::force",
+            4 => "tiled::force_always",
+            5 => "tiled::fused",
+            _ => "unknown",
+        }
+    }
+}
+
+/// Log a shader-debug capture at DEBUG: one summary line plus the first
+/// 64 records (the buffer caps at 1024).
+pub fn log_shader_debug_capture(records: &[ShaderDbgRecord], attempted: u32) {
+    crate::log_debug!(
+        "shader_debug: {} record(s) captured ({} attempted, cap 1024)",
+        records.len(),
+        attempted
+    );
+    for r in records.iter().take(64) {
+        crate::log_debug!(
+            "  [{}] thread {}: ax={:.6}, ay={:.6}",
+            r.kernel_name(),
+            r.thread,
+            r.ax,
+            r.ay
+        );
+    }
+    if records.len() > 64 {
+        crate::log_debug!("  ... ({} more)", records.len() - 64);
+    }
 }

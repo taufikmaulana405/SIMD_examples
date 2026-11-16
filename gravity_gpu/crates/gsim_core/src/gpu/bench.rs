@@ -82,6 +82,8 @@ pub struct BenchmarkRunner {
     telemetry_path: PathBuf,
     /// Adapter identity, queried once.
     pub adapter_info: AdapterInfo,
+    /// Enable GPU shader-debug logging on every sim this runner builds.
+    pub shader_debug: bool,
 }
 
 impl BenchmarkRunner {
@@ -91,6 +93,7 @@ impl BenchmarkRunner {
         adapter_index: usize,
         seed: u64,
         telemetry_path: PathBuf,
+        shader_debug: bool,
     ) -> Result<Self, String> {
         let adapters = GpuContext::list_adapters(backend);
         let adapter_info = adapters
@@ -103,6 +106,7 @@ impl BenchmarkRunner {
             seed,
             telemetry_path,
             adapter_info,
+            shader_debug,
         })
     }
 
@@ -126,6 +130,7 @@ impl BenchmarkRunner {
             no_accel_cache: false,
             spawn_radius,
             workgroup_size: 0,
+            shader_debug: self.shader_debug,
         }
     }
 
@@ -196,6 +201,12 @@ impl BenchmarkRunner {
         }
         sim.update_stats();
         let stats = sim.read_stats();
+        // Shader-debug capture goes last: it runs one extra step, so it
+        // must not perturb anything measured above.
+        if self.shader_debug {
+            let (records, attempted) = sim.capture_shader_debug();
+            crate::gpu::run::log_shader_debug_capture(&records, attempted);
+        }
         RungResult {
             mode: format!("{mode:?}").to_lowercase(),
             n,

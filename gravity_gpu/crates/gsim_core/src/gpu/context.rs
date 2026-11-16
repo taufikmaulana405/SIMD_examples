@@ -20,6 +20,11 @@ pub struct SimConfig {
     pub spawn_radius: f32,
     /// Tiled force workgroup size (autotuned when 0).
     pub workgroup_size: u32,
+    /// Enable GPU shader-debug logging (force-kernel per-thread records).
+    /// Pipelines compile with `SHADER_DEBUG=1`; the CPU reads the debug
+    /// buffer back only on explicit request. Off by default; zero cost
+    /// when off (the gate folds to `if (false)`).
+    pub shader_debug: bool,
 }
 
 /// Wgpu device/queue plus adapter identity.

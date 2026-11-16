@@ -57,3 +57,38 @@ struct TrailUni {
 // `reduce` skip the O(n) member scan for singleton components — the scan
 // over all-n roots was O(n^2) per merge step (7.7 ms at N=10000 on DX12).
 @group(0) @binding(20) var<storage, read_write> merged_root: array<atomic<u32>>;
+
+// Shader-debug logging (opt-in via `--shader-debug`).
+//
+// WGSL has no printf; the mechanism is an atomically-appended debug buffer.
+// `SHADER_DEBUG` is a pipeline override (default 0 = off). Verified with
+// naga: at 0 the gate folds to `if (false)` and every downstream shader
+// compiler strips it — zero cost when disabled. When 1, each instrumented
+// force thread appends one 4-word record: (kernel_tag, thread_id,
+// bitcast(ax), bitcast(ay)). The buffer holds 1024 records; overflow is
+// dropped silently (capped sample). Reading the buffer back forces a
+// GPU/CPU sync, so capture only happens on explicit CPU request.
+override SHADER_DEBUG: u32 = 0u;
+const SHADER_DBG_WORDS: u32 = 4096u;
+
+@group(0) @binding(21) var<storage, read_write> dbg_buf: array<u32, SHADER_DBG_WORDS>;
+@group(0) @binding(22) var<storage, read_write> dbg_count: atomic<u32>;
+
+// Kernel tags for shader-debug records.
+const DBG_NAIVE: u32 = 1u;
+const DBG_PASS1: u32 = 2u;
+const DBG_FORCE: u32 = 3u;
+const DBG_FORCE_ALWAYS: u32 = 4u;
+const DBG_FUSED: u32 = 5u;
+
+fn dbg_log(tag: u32, thread_id: u32, ax: f32, ay: f32) {
+    if (SHADER_DEBUG != 0u) {
+        let i = atomicAdd(&dbg_count, 1u);
+        if (i + 4u <= SHADER_DBG_WORDS) {
+            dbg_buf[i] = tag;
+            dbg_buf[i + 1u] = thread_id;
+            dbg_buf[i + 2u] = bitcast<u32>(ax);
+            dbg_buf[i + 3u] = bitcast<u32>(ay);
+        }
+    }
+}

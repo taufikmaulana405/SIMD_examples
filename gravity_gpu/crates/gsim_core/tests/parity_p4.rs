@@ -127,6 +127,7 @@ fn p4_long_run_stats_within_noise_floor() {
                 no_accel_cache: false,
                 spawn_radius: SPAWN_RADIUS,
                 workgroup_size: 128,
+                shader_debug: false,
             },
             None,
         )

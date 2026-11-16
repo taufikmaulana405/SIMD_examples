@@ -115,6 +115,10 @@ pub struct CliConfig {
     pub sweep_steps: u64,
     /// Log verbosity: error | warn | info | debug | trace (default info).
     pub log_level: LogLevel,
+    /// Enable GPU shader-debug logging: force kernels append per-thread
+    /// (kernel, thread, ax, ay) records to a debug buffer, read back on
+    /// explicit request. Off by default; zero cost when off.
+    pub shader_debug: bool,
 }
 
 impl Default for CliConfig {
@@ -136,6 +140,7 @@ impl Default for CliConfig {
             sweep: None,
             sweep_steps: 4,
             log_level: LogLevel::Info,
+            shader_debug: false,
         }
     }
 }
@@ -231,6 +236,7 @@ impl CliConfig {
                         )
                     });
                 }
+                "--shader-debug" => cfg.shader_debug = true,
                 other => panic!("unknown argument: {other}"),
             }
             i += 1;
@@ -246,6 +252,7 @@ impl CliConfig {
     /// assert!(help.contains("--bench"));
     /// assert!(help.contains("--sweep-steps"));
     /// assert!(help.contains("--log-level"));
+    /// assert!(help.contains("--shader-debug"));
     /// assert!(help.contains("EXAMPLES"));
     /// ```
     pub fn help_text() -> &'static str {
@@ -280,6 +287,9 @@ FLAGS:
     --sweep-steps <u64>   Physics steps per sweep point (default: 4)
     --log-level <name>    error | warn | info | debug | trace (default: info)
                           Logs go to stderr; stdout stays clean for JSON output
+    --shader-debug         Enable GPU shader-debug logging (force-kernel
+                          per-thread records, read back on request; zero cost
+                          when off)
 
 INTERACTIVE CONTROLS:
     Space         pause / resume

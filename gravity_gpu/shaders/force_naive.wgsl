@@ -23,4 +23,5 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         ax += d * f;
     }
     accel_a[i] = ax;
+    dbg_log(DBG_NAIVE, i, ax.x, ax.y);
 }

@@ -19,6 +19,8 @@
     .\bench.ps1
     .\bench.ps1 -Backend dx12 -Adapter 0 -N 10000 -Steps 150
     .\bench.ps1 -Exe C:\gsim\gsim_app.exe -Sweep "1000,5000,10000,20000" -SweepSteps 30
+    .\bench.ps1 -ShaderDebug            # GPU shader-debug capture (force-kernel (thread, ax, ay) records)
+    .\bench.ps1 -LogLevel debug         # verbose logging without shader capture
 #>
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "gsim_app.exe"),
@@ -32,7 +34,9 @@ param(
     [ValidateSet("naive", "tiled")][string]$Mode = "tiled",
     [ValidateSet("parallel", "serial")][string]$MergeMode = "parallel",
     [string]$OutDir = (Join-Path $PSScriptRoot "telemetry"),
-    [string]$Telemetry = ""
+    [string]$Telemetry = "",
+    [ValidateSet("error", "warn", "info", "debug", "trace")][string]$LogLevel = "info",
+    [switch]$ShaderDebug
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,10 +77,14 @@ $exeArgs = @(
     "--sweep-steps", "$SweepSteps",
     "--mode", $Mode,
     "--merge-mode", $MergeMode,
-    "--dump", $tmpJson
+    "--dump", $tmpJson,
+    "--log-level", $LogLevel
 )
 if ($Telemetry -ne "") {
     $exeArgs += @("--telemetry", $Telemetry)
+}
+if ($ShaderDebug) {
+    $exeArgs += @("--shader-debug")
 }
 
 Write-Host "== gsim Windows benchmark =="

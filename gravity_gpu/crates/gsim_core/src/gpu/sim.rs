@@ -61,6 +61,10 @@ pub struct Sim {
     /// absorbed another body this step; lets `reduce` skip the O(n) member
     /// scan for singleton components.
     pub(crate) merged_root: wgpu::Buffer,
+    /// Shader-debug log buffer (4096 u32 words = 1024 records).
+    pub(crate) dbg_buf: wgpu::Buffer,
+    /// Shader-debug atomic append counter (single u32).
+    pub(crate) dbg_count: wgpu::Buffer,
     // Trails.
     pub(crate) trail_ring: wgpu::Buffer,
     pub(crate) trail_head: wgpu::Buffer,
@@ -120,6 +124,7 @@ fn storage_buf(
     extra: wgpu::BufferUsages,
 ) -> wgpu::Buffer {
     *vram += size;
+    crate::log_debug!("gpu buffer {label}: {size} bytes");
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size,
@@ -191,6 +196,24 @@ impl Sim {
             bytes_f32(n),
             wgpu::BufferUsages::empty(),
         );
+        // Shader-debug log: 4096-word ring of 4-word records
+        // (kernel_tag, thread_id, ax_bits, ay_bits) = 1024 records max,
+        // plus an atomic append counter. Always allocated (16 KiB); only
+        // written when SHADER_DEBUG=1.
+        let dbg_buf = storage_buf(
+            device,
+            &mut vram,
+            "dbg_buf",
+            4096 * 4,
+            wgpu::BufferUsages::COPY_SRC,
+        );
+        let dbg_count = storage_buf(
+            device,
+            &mut vram,
+            "dbg_count",
+            4,
+            wgpu::BufferUsages::COPY_SRC,
+        );
 
         let trail_ring = storage_buf(
             device,
@@ -202,6 +225,7 @@ impl Sim {
         let trail_head = word_buf(device, &mut vram, "trail_head");
 
         let stats_buf = storage_buf(device, &mut vram, "stats", 32, wgpu::BufferUsages::COPY_SRC);
+        crate::log_debug!("gpu buffer stats_staging: 32 bytes");
         let stats_staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("stats_staging"),
             size: 32,
@@ -223,6 +247,7 @@ impl Sim {
             1024 * 4,
             wgpu::BufferUsages::empty(),
         );
+        crate::log_debug!("gpu buffer trail_uni: 32 bytes");
         let trail_uni = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("trail_uni"),
             size: 32,
@@ -257,15 +282,22 @@ impl Sim {
         });
         // Binding 20: merged_root flag array (storage, read_write).
         entries.push(storage_rw(20));
+        // Bindings 21/22: shader-debug log buffer + atomic append counter
+        // (storage, read_write). Always bound; only written when the
+        // SHADER_DEBUG pipeline override is 1 (`--shader-debug`).
+        entries.push(storage_rw(21));
+        entries.push(storage_rw(22));
         let bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("gsim compute layout"),
             entries: &entries,
         });
+        crate::log_debug!("compute bind-group layout created (23 bindings)");
         let compute_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gsim compute pipeline layout"),
             bind_group_layouts: &[Some(&bg_layout)],
             immediate_size: 0,
         });
+        crate::log_debug!("compute pipeline layout created");
 
         let compute_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("gsim compute bg"),
@@ -286,6 +318,8 @@ impl Sim {
                 bg_entry(12, &alive_count),
                 bg_entry(13, &n_buf),
                 bg_entry(20, &merged_root),
+                bg_entry(21, &dbg_buf),
+                bg_entry(22, &dbg_count),
                 bg_entry(14, &trail_ring),
                 bg_entry(15, &trail_head),
                 bg_entry(16, &stats_buf),
@@ -294,6 +328,7 @@ impl Sim {
                 bg_entry(19, &trail_uni),
             ],
         });
+        crate::log_debug!("compute bind group created (23 entries)");
 
         let wg_size = if cfg.workgroup_size == 0 {
             128
@@ -304,7 +339,13 @@ impl Sim {
         // NTILES_MAX override in force_tiled.wgsl): n only shrinks, so the
         // startup capacity is a valid bound for the whole run.
         let ntiles_max = (cfg.n_max as u32).div_ceil(wg_size);
-        let pipes = ComputePipelines::new(device, &compute_layout, wg_size, ntiles_max);
+        let pipes = ComputePipelines::new(
+            device,
+            &compute_layout,
+            wg_size,
+            ntiles_max,
+            cfg.shader_debug,
+        );
 
         // Camera uniforms for the render pipelines.
         let mut cam_buf = |label: &str| {
@@ -340,6 +381,8 @@ impl Sim {
             alive_count,
             n_buf,
             merged_root,
+            dbg_buf,
+            dbg_count,
             trail_ring,
             trail_head,
             stats_buf,

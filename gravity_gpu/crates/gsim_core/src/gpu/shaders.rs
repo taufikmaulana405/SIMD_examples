@@ -114,6 +114,7 @@ fn pass1(
     let ax = force_row(i, n, lid.x);
     if (i < n) {
         accel_a[i] = ax;
+        dbg_log(DBG_PASS1, i, ax.x, ax.y);
     }
 }
 
@@ -130,6 +131,7 @@ fn force(
     let ax = force_row(i, n, lid.x);
     if (atomicLoad(&merge_flag[0]) != 0u && i < n) {
         accel_a[i] = ax;
+        dbg_log(DBG_FORCE, i, ax.x, ax.y);
     }
 }
 
@@ -143,6 +145,7 @@ fn force_always(
     let ax = force_row(i, n, lid.x);
     if (i < n) {
         accel_a[i] = ax;
+        dbg_log(DBG_FORCE_ALWAYS, i, ax.x, ax.y);
     }
 }
 
@@ -157,6 +160,7 @@ fn fused(
     var live = false;
     if (i < n) {
         accel_a[i] = ax;
+        dbg_log(DBG_FUSED, i, ax.x, ax.y);
         live = true;
     }
     // Barrier-free naive detection (upper triangle).

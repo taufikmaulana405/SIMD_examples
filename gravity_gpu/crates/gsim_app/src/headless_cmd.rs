@@ -18,6 +18,7 @@ pub fn run(cfg: &CliConfig) {
         no_accel_cache: cfg.no_accel_cache,
         spawn_radius: SPAWN_RADIUS,
         workgroup_size: 128,
+        shader_debug: cfg.shader_debug,
     };
     let mut sim = match Sim::new(cfg.backend, cfg.adapter, sim_cfg, None) {
         Ok(s) => s,
@@ -50,6 +51,12 @@ pub fn run(cfg: &CliConfig) {
     sim.update_stats();
     let stats = sim.read_stats();
     let hash = sim.readback_particles().positions_hash();
+    // Shader-debug capture goes after all measurements: it runs one extra
+    // step, so it must not perturb them.
+    if cfg.shader_debug {
+        let (records, attempted) = sim.capture_shader_debug();
+        gsim_core::gpu::run::log_shader_debug_capture(&records, attempted);
+    }
     let info = &sim.ctx.adapter_info;
 
     let summary = json!({

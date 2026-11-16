@@ -90,6 +90,7 @@ impl App {
             no_accel_cache: cfg.no_accel_cache,
             spawn_radius: SPAWN_RADIUS,
             workgroup_size: 128,
+            shader_debug: cfg.shader_debug,
         };
         let mut sim = Sim::from_context(ctx, sim_cfg, Some(surface_format)).expect("sim");
         sim.spawn();
