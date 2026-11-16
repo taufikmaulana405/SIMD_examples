@@ -19,6 +19,12 @@ impl Sim {
     /// Spawn the cloud on the CPU and upload it; reset all control words.
     /// Bit-identical to legacy `--seed seed --count n` for the same seed.
     pub fn spawn(&mut self) {
+        crate::log_debug!(
+            "spawning {} particles (seed={}, radius={})",
+            self.cfg.n_max,
+            self.cfg.seed,
+            self.cfg.spawn_radius
+        );
         let cloud = create_particles_radius(self.cfg.seed, self.cfg.n_max, self.cfg.spawn_radius);
         self.upload(&cloud);
     }
@@ -376,6 +382,7 @@ impl Sim {
     /// the fastest. Returns `(best, [(size, avg_fused_ns)])`.
     pub fn autotune(&mut self) -> (u32, Vec<(u32, f64)>) {
         let mut table = Vec::new();
+        crate::log_debug!("autotune: trying workgroup sizes [64, 128, 256]");
         for &wg in &[64u32, 128, 256] {
             self.set_workgroup_size(wg);
             self.spawn();
@@ -391,7 +398,9 @@ impl Sim {
                     }
                 }
             }
-            table.push((wg, acc / cnt.max(1) as f64));
+            let avg = acc / cnt.max(1) as f64;
+            crate::log_debug!("autotune: wg={wg} → {avg:.1} ns/step (fused, 4 timed steps)");
+            table.push((wg, avg));
         }
         let best = table
             .iter()

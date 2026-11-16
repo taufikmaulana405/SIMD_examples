@@ -1,9 +1,13 @@
 //! Leveled logging: `ERROR`/`WARN`/`INFO`/`DEBUG`/`TRACE`, default `INFO`.
 //!
-//! Deliberately dependency-free (no `log`/`env_logger`): a process-global
-//! verbosity ceiling plus thin macros. Human-readable lines go to
-//! **stderr** so stdout stays clean for piped JSON (`--bench` without
-//! `--dump`, `--help`). Nothing here touches the telemetry JSONL writer.
+//! Dependency-light (no `log`/`env_logger`): a process-global verbosity
+//! ceiling plus thin macros. `chrono` is used only for the local clock.
+//! Human-readable lines go to **stderr** so stdout stays clean for piped
+//! JSON (`--bench` without `--dump`, `--help`). Nothing here touches the
+//! telemetry JSONL writer.
+//!
+//! Every line carries a local-time timestamp (no date):
+//! `[20:31:05] [info] rung Tiled: ...`
 //!
 //! Performance contract (measured, not hoped):
 //! - `ERROR`..=`DEBUG` fire per-run or per-stage, outside the hot step
@@ -85,12 +89,19 @@ pub fn enabled(level: LogLevel) -> bool {
     (level as u8) <= MAX_LEVEL.load(Ordering::Relaxed)
 }
 
-/// Emit one `[level] message` line to stderr if `level` is at or below the
-/// ceiling. Prefer the `log_*` macros over calling this directly.
+/// Emit one `[HH:MM:SS] [level] message` line to stderr if `level` is at
+/// or below the ceiling. Prefer the `log_*` macros over calling this
+/// directly.
 pub fn log(level: LogLevel, args: std::fmt::Arguments<'_>) {
     if enabled(level) {
-        eprintln!("[{}] {}", level.name(), args);
+        eprintln!("[{}] [{}] {}", local_timestamp(), level.name(), args);
     }
+}
+
+/// Current local time as `HH:MM:SS` (no date). `std` cannot see the
+/// platform timezone, hence the `chrono` dependency (clock only).
+pub fn local_timestamp() -> String {
+    chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
 /// Emit at an explicit level: `gsim_log!(LogLevel::Debug, "x={}", x)`.
@@ -176,5 +187,15 @@ mod tests {
         assert!(!enabled(LogLevel::Debug));
         assert!(!enabled(LogLevel::Trace));
         set_max_level(prev);
+    }
+
+    #[test]
+    fn local_timestamp_shape() {
+        // "HH:MM:SS"
+        let ts = local_timestamp();
+        assert_eq!(ts.len(), 8);
+        assert_eq!(&ts[2..3], ":");
+        assert_eq!(&ts[5..6], ":");
+        assert!(ts[..2].parse::<u32>().is_ok());
     }
 }

@@ -28,6 +28,12 @@ pub fn run(cfg: &CliConfig) {
     };
     sim.spawn();
 
+    log_info!(
+        "headless: starting {} steps (n={}, mode={:?})",
+        cfg.steps,
+        cfg.n,
+        cfg.mode
+    );
     let wall = Instant::now();
     for _ in 0..cfg.steps {
         sim.step();

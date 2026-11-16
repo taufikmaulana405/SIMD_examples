@@ -33,6 +33,10 @@ impl GpuTimer {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let supported = device.features().contains(TIMESTAMP_FEATURES);
         if !supported {
+            crate::log_warn!(
+                "GPU timestamp queries not supported by this device: \
+                 per-pass timings fall back to CPU wall-clock"
+            );
             return Self {
                 query_set: None,
                 resolve_buf: None,

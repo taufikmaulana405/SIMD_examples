@@ -86,11 +86,20 @@ impl GpuContext {
                  (on Linux only Vulkan exists; dx12 needs Windows)"
             ));
         }
+        crate::log_debug!(
+            "enumerated {} adapter(s) for backend {choice:?}",
+            adapters.len()
+        );
         let adapter = adapters
             .into_iter()
             .nth(index)
             .ok_or_else(|| format!("adapter index {index} out of range (see --adapter list)"))?;
         let adapter_info = AdapterInfo::from_wgpu(&adapter.get_info());
+        crate::log_debug!(
+            "adapter selected: {} [{}]",
+            adapter_info.name,
+            adapter_info.device_type
+        );
         let desc = |features| wgpu::DeviceDescriptor {
             label: Some("gsim device"),
             required_features: features,
@@ -100,13 +109,18 @@ impl GpuContext {
             trace: wgpu::Trace::Off,
         };
         // Prefer timestamp queries; fall back without them.
-        let (device, queue) = match pollster::block_on(
+        let (device, queue, with_timestamps) = match pollster::block_on(
             adapter.request_device(&desc(crate::gpu::timing::TIMESTAMP_FEATURES)),
         ) {
-            Ok(pair) => pair,
-            Err(_) => pollster::block_on(adapter.request_device(&desc(wgpu::Features::empty())))
-                .map_err(|e| format!("request_device failed: {e:?}"))?,
+            Ok(pair) => (pair.0, pair.1, true),
+            Err(_) => {
+                let (device, queue) =
+                    pollster::block_on(adapter.request_device(&desc(wgpu::Features::empty())))
+                        .map_err(|e| format!("request_device failed: {e:?}"))?;
+                (device, queue, false)
+            }
         };
+        crate::log_debug!("device opened: timestamp_queries={with_timestamps}");
         Ok(Self {
             instance,
             adapter,

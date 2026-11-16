@@ -75,7 +75,7 @@ impl ComputePipelines {
                 cache: None,
             })
         };
-        Self {
+        let pipes = Self {
             naive_force: one("force_naive", "main"),
             detect_naive: one("detect_naive", "main"),
             integrate: one("integrate", "integrate"),
@@ -92,7 +92,15 @@ impl ComputePipelines {
             force_always: tiled("force_always"),
             fused: tiled("fused"),
             tiled_module,
-        }
+        };
+        // Pipeline inventory: which WGSL modules and entry points were
+        // compiled, and with which overrides. The tiled force module is
+        // generated at runtime with the tile loop fully unrolled (FXC
+        // X4026 workaround); WG/NTILES_MAX are pipeline overrides.
+        crate::log_debug!(
+            "shader inventory (compute):\n    force_naive::main\n    detect_naive::main\n    integrate::integrate\n    integrate::finish\n    merge::compress\n    merge::reduce\n    merge::copy_back\n    merge::serial_parity\n    trail::append\n    stats::partial\n    stats::finalize\n    force_tiled::pass1 (overrides WG={wg}, NTILES_MAX={ntiles_max}; tile loop unrolled)\n    force_tiled::force (overrides WG={wg}, NTILES_MAX={ntiles_max}; tile loop unrolled)\n    force_tiled::force_always (overrides WG={wg}, NTILES_MAX={ntiles_max}; tile loop unrolled)\n    force_tiled::fused (overrides WG={wg}, NTILES_MAX={ntiles_max}; tile loop unrolled)"
+        );
+        pipes
     }
 
     /// Rebuild the four tiled-force pipelines for a new workgroup size
@@ -129,5 +137,8 @@ impl ComputePipelines {
         self.force = tiled("force");
         self.force_always = tiled("force_always");
         self.fused = tiled("fused");
+        crate::log_debug!(
+            "shader inventory: tiled pipelines rebuilt (overrides WG={wg}, NTILES_MAX={ntiles_max})"
+        );
     }
 }

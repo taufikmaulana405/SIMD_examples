@@ -130,17 +130,19 @@ pub fn run(cfg: &CliConfig) {
             SPAWN_RADIUS,
             wg,
         );
-        log_info!(
+        // One combined block: the rung headline plus its per-pass table,
+        // separated by newlines — much easier to read than a run of
+        // separately-prefixed log lines.
+        let mut block = format!(
             "rung {:?}: {:.2} steps/s ({} steps, final count {}), timestamps={}",
-            mode,
-            r.steps_per_sec,
-            r.steps,
-            r.final_count,
-            r.gpu_timestamps
+            mode, r.steps_per_sec, r.steps, r.final_count, r.gpu_timestamps
         );
         for (name, ns) in &r.per_pass_ns {
-            log_debug!("    pass {name}: {ns:.1} ns");
+            // Per-pass timings are the benchmark's product, not trivia:
+            // they stay visible at the default INFO level in bench mode.
+            block.push_str(&format!("\n    pass {name}: {ns:.1} ns"));
         }
+        log_info!("{block}");
         rungs.push(json!({
             "mode": r.mode, "n": r.n, "steps": r.steps,
             "steps_per_sec": r.steps_per_sec,
@@ -189,7 +191,7 @@ pub fn run(cfg: &CliConfig) {
         "sweep ok: {} points; max N @60fps: 1x={max_n_1x:?} 4x={max_n_4x:?}",
         sweep_json.len()
     );
-    log_debug!(
+    log_info!(
         "sweep points: {}",
         sweep_json
             .iter()

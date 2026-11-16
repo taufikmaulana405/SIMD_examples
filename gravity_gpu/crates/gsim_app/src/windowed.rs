@@ -10,6 +10,7 @@
 use gsim_core::cli::CliConfig;
 use gsim_core::constants::*;
 use gsim_core::gpu::{GpuContext, RenderParams, Sim, SimConfig};
+use gsim_core::log_info;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
@@ -92,6 +93,7 @@ impl App {
         };
         let mut sim = Sim::from_context(ctx, sim_cfg, Some(surface_format)).expect("sim");
         sim.spawn();
+        log_info!("interactive: sim ready (n={}) — entering event loop", cfg.n);
 
         let size = window.inner_size();
         surface.configure(

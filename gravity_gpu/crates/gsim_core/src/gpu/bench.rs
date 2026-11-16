@@ -20,6 +20,7 @@ use crate::gpu::context::{GpuContext, SimConfig};
 use crate::gpu::sim::Sim;
 use crate::spawn::create_particles;
 use crate::telemetry::{append_telemetry, AdapterInfo};
+use crate::{log_debug, log_info};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -166,6 +167,9 @@ impl BenchmarkRunner {
         cfg.workgroup_size = workgroup_size;
         let mut sim = Sim::new(self.backend, self.adapter_index, cfg, None).expect("sim for rung");
         sim.spawn();
+        log_info!(
+            "rung {mode:?}: starting — 2 warmup + {steps} timed steps (n={n}, wg={workgroup_size})"
+        );
         for _ in 0..2 {
             sim.step();
         }
@@ -227,8 +231,11 @@ impl BenchmarkRunner {
         let mut modes = Vec::new();
         let mut hashes = Vec::new();
         let mut deterministic_ok = true;
+        log_debug!("parity: starting (n={n}, steps={steps})");
         for mode in [GpuMode::Naive, GpuMode::Tiled] {
+            log_debug!("parity: {mode:?} run 1/2 starting");
             let h1 = self.parity_run(mode, n, steps);
+            log_debug!("parity: {mode:?} run 2/2 starting");
             let h2 = self.parity_run(mode, n, steps);
             let det = h1 == h2;
             deterministic_ok &= det;
@@ -245,6 +252,7 @@ impl BenchmarkRunner {
         }
         let cross_mode_match = hashes[0] == hashes[1];
 
+        log_debug!("parity: CPU reference run starting");
         let mut cpu = CpuSim::new(create_particles(self.seed, n));
         for _ in 0..steps {
             cpu.step(PHYSICS_DT);
@@ -295,6 +303,10 @@ impl BenchmarkRunner {
     /// steps/frame) time scale. Returns per-point results.
     pub fn sweep(&self, ns: &[usize], steps_per_point: u64) -> Vec<SweepPoint> {
         let mut out = Vec::new();
+        log_info!(
+            "sweep: {} point(s) starting ({steps_per_point} steps/point)",
+            ns.len()
+        );
         for &n in ns {
             let radius = sweep_spawn_radius(n);
             let rung = self.ladder_rung(

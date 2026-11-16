@@ -134,6 +134,9 @@ impl Sim {
         self.render_bg_particles = Some(bgp);
         self.p_render_trails = Some(pt);
         self.render_bg_trails = Some(bgt);
+        crate::log_debug!(
+            "shader inventory (render):\n    particles::vs + particles::fs (format {format:?})\n    trails::vs + trails::fs (format {format:?})"
+        );
     }
 
     /// Render trails + particles into the target view.
